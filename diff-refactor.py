@@ -15,17 +15,10 @@ MIN_BLOCK_SIZE = 4
 #################
 
 
-class DiffStatus(Enum):
+class FileDiffStatus(Enum):
     UNKNOWN = "unknown"
     ADDED = "added"
     DELETED = "deleted"
-    MODIFIED = "modified"
-
-
-class Marker(Enum):
-    MOVED = "moved"
-    DUPLICATED = "duplicated"
-    COMBINED = "combined"
     MODIFIED = "modified"
 
 
@@ -45,7 +38,7 @@ class ParsedHunkDiff:
 class ParsedFileDiff:
     header: list[str]
     file_path: str
-    status: DiffStatus
+    status: FileDiffStatus
     hunks: list[ParsedHunkDiff]
 
 
@@ -59,7 +52,7 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
     current_header: list[str] = []
     current_hunks: list[ParsedHunkDiff] = []
     current_hunk: ParsedHunkDiff | None = None
-    status: DiffStatus = DiffStatus.MODIFIED
+    status: FileDiffStatus = FileDiffStatus.MODIFIED
 
     for line in diff_text.splitlines():
         if line.startswith("diff --git"):
@@ -81,15 +74,15 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             current_file = parts[3][2:] if len(parts) >= 4 else "unknown"
             current_hunks = []
             current_hunk = None
-            status = DiffStatus.MODIFIED
+            status = FileDiffStatus.MODIFIED
         elif line.startswith("new file mode"):
             # new file mode 100644
             current_header.append(line)
-            status = DiffStatus.ADDED
+            status = FileDiffStatus.ADDED
         elif line.startswith("deleted file mode"):
             # deleted file mode 100644
             current_header.append(line)
-            status = DiffStatus.DELETED
+            status = FileDiffStatus.DELETED
         elif line.startswith("@@"):
             # @@ -1,256 +0,0 @@
             if current_hunk is not None:
@@ -127,6 +120,13 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
 ####################
 ### Mapping ########
 ####################
+class Marker(Enum):
+    MOVED = "moved"
+    DUPLICATED = "duplicated"
+    COMBINED = "combined"
+    MODIFIED = "modified"
+
+
 # type alias
 MappingDict = dict[tuple[str, int, int], list[tuple[str, int, int]]]
 
@@ -146,21 +146,23 @@ def build_match_mappings(
     n = len(files)
     for i in range(n):
         src = files[i]
-        if src.status not in (DiffStatus.DELETED, DiffStatus.MODIFIED):
+        if src.status not in (FileDiffStatus.DELETED, FileDiffStatus.MODIFIED):
             # Ignore files that are added, they cannot provide a source line
             continue
         for j in range(n):
             dst = files[j]
-            if dst.status not in (DiffStatus.ADDED, DiffStatus.MODIFIED):
+            if dst.status not in (FileDiffStatus.ADDED, FileDiffStatus.MODIFIED):
                 # Ignore files that are deleted, they cannot provide a destination line
                 continue
             for hi, src_hunk in enumerate(src.hunks):
+                # Find all the normed lines that are removed in this hunk
                 src_lines = [entry[1] for entry in src_hunk.removed_entries]
-                if not src_lines:
+                if len(src_lines) == 0:
                     continue
                 for hj, dst_hunk in enumerate(dst.hunks):
+                    # Find all the normed lines that are added in this hunk
                     dst_lines = [entry[1] for entry in dst_hunk.added_entries]
-                    if not dst_lines:
+                    if len(dst_lines) == 0:
                         continue
                     matcher = difflib.SequenceMatcher(None, src_lines, dst_lines)
                     for block in matcher.get_matching_blocks():
