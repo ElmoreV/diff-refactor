@@ -33,6 +33,7 @@ The diff-refactor tool extends the basic diff concepts for added and deleted ele
 These are the basic concepts that are implemented by the basic diff concepts, and is pretty much used by the original diff tool, and also by git diff in its default mode.
 
 ![Level 1 diff concepts](images/Diff_concepts_level_1.drawio.svg)
+
 An open circle means that on this position, this block of code wasn't there. A filled green circle means that the block of code is there afterwards. A filled red circle means that the block of code is not there afterwards.
 
 ## Layer 2: Moves
