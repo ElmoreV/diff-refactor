@@ -5,10 +5,15 @@ from dataclasses import dataclass
 from enum import Enum
 # --- Configuration ---
 
-# Minimal block length to trigger block header/footer.
-GROUP_THRESHOLD = 4
+# TODO: 1. There are double blocks: sometimes we have some lines that are SPLIT inside of a MOVED block
+# TODO: 1. ctd: what should we do with these?
+# TODO: 2. The lines numbers that are output on the moved/split/combined headers blocks aren't correct.
+# TODO: 3. Remove the autojunk from the diff. (like )} or newlines).
+
 # Minimal block length to catch combines and splits.
-MIN_BLOCK_SIZE = 4
+MIN_BLOCK_SIZE = 1
+# Minimal block length to trigger block header/footer.
+BLOCK_HEADER_THRESHOLD = 4
 
 ##################
 ### Parsing #####
@@ -136,7 +141,9 @@ class LineMarker(Enum):
     MOVED_REMOVED = "M-"
     SPLIT_ADDED = "S+"
     SPLIT_REMOVED = "S-"
-    UNKNOWN = "?"
+    UNKNOWN_ADDED = "?+"
+    UNKNOWN_REMOVED = "?-"
+    UNKNOWN = "??"
 
 
 # type alias
@@ -245,9 +252,17 @@ def compute_markers_individual(
                 else LineMarker.SPLIT_ADDED
             )
         elif len(src_keys) > 1:
-            marker = LineMarker.COMBINED_ADDED
+            destination_sibling = set(
+                [sib for sk in src_keys for sib in added_mapping.get(sk, [])]
+            )
+            if len(destination_sibling) < len(src_keys):
+                marker = LineMarker.COMBINED_ADDED
+            elif len(destination_sibling) < len(src_keys):
+                marker = LineMarker.MOVED_ADDED
+            else:
+                marker = LineMarker.SPLIT_ADDED
         else:
-            marker = LineMarker.UNKNOWN
+            marker = LineMarker.UNKNOWN_ADDED
         added_markers[dst_key] = marker
     removed_markers = {}
     for src_key, dst_keys in removed_mapping.items():
@@ -259,7 +274,15 @@ def compute_markers_individual(
                 else LineMarker.COMBINED_REMOVED
             )
         elif len(dst_keys) > 1:
-            marker = LineMarker.SPLIT_REMOVED
+            source_siblings = set(
+                [x for dk in dst_keys for x in added_mapping.get(dk, [])]
+            )
+            if len(source_siblings) < len(dst_keys):
+                marker = LineMarker.SPLIT_REMOVED
+            elif len(source_siblings) == len(dst_keys):
+                marker = LineMarker.MOVED_REMOVED
+            else:  # len(source_siblings) > len(dst_keys):
+                marker = LineMarker.COMBINED_REMOVED
         else:
             marker = LineMarker.UNKNOWN
         removed_markers[src_key] = marker
@@ -349,7 +372,7 @@ def output_annotated_diff(
                             group_keys.append((f.file_path, hi, added_counter))
                             i += 1
                             added_counter += 1
-                        if len(group_lines) >= GROUP_THRESHOLD:
+                        if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
                             marker = added_markers[group_keys[0]]
                             desc = marker_description(marker)
                             # Get source info from the mapping if available:
@@ -405,7 +428,7 @@ def output_annotated_diff(
                             group_keys.append((f.file_path, hi, removed_counter))
                             i += 1
                             removed_counter += 1
-                        if len(group_lines) >= GROUP_THRESHOLD:
+                        if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
                             marker = removed_markers[group_keys[0]]
                             desc = marker_description(marker)
                             dst_keys = removed_mapping.get(group_keys[0], [])
