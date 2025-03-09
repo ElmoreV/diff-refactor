@@ -131,6 +131,32 @@ class Marker(Enum):
 MappingDict = dict[tuple[str, int, int], list[tuple[str, int, int]]]
 
 
+def all_maximal_matches(a: list, b: list, min_size: int = 1) -> list[difflib.Match]:
+    # a: a sequence (list of characters | list of lines, etc.)
+    # b: a sequence (list of characters | list of lines, etc.)
+    # difflib SequenceMatcher.get_matching_blocks() returns a list of Match objects
+    # so we mimic that behavior here.
+    # The difference here is that we return all matches, so we output more match objects.
+    matches = []
+    for i in range(len(a)):
+        for j in range(len(b)):
+            if a[i] == b[j]:
+                # Ensure we can't extend backward:
+                # either i==0 or j==0, or the previous elements are different
+                if i == 0 or j == 0 or a[i - 1] != b[j - 1]:
+                    # Now extend forward
+                    k = 1
+                    # Extend match as long as lines are equal.
+                    while i + k < len(a) and j + k < len(b) and a[i + k] == b[j + k]:
+                        k += 1
+                    if k >= min_size:
+                        # Append a Match tuple (like difflib.Match)
+                        matches.append(difflib.Match(i, j, k))
+    # Append a final empty match to mimic SequenceMatcher behavior.
+    matches.append(difflib.Match(len(a), len(b), 0))
+    return matches
+
+
 def build_match_mappings(
     files: list[ParsedFileDiff],
 ) -> tuple[
@@ -144,34 +170,38 @@ def build_match_mappings(
     added_mapping: MappingDict = {}
     removed_mapping: MappingDict = {}
     n = len(files)
-    for i in range(n):
-        src = files[i]
+    for src_ii in range(n):
+        src = files[src_ii]
         if src.status not in (FileDiffStatus.DELETED, FileDiffStatus.MODIFIED):
             # Ignore files that are added, they cannot provide a source line
             continue
-        for j in range(n):
-            dst = files[j]
+        for dst_jj in range(n):
+            dst = files[dst_jj]
             if dst.status not in (FileDiffStatus.ADDED, FileDiffStatus.MODIFIED):
                 # Ignore files that are deleted, they cannot provide a destination line
                 continue
-            for hi, src_hunk in enumerate(src.hunks):
+            for srch_ii, src_hunk in enumerate(src.hunks):
                 # Find all the normed lines that are removed in this hunk
                 src_lines = [entry[1] for entry in src_hunk.removed_entries]
                 if len(src_lines) == 0:
                     continue
-                for hj, dst_hunk in enumerate(dst.hunks):
+                for dsth_jj, dst_hunk in enumerate(dst.hunks):
                     # Find all the normed lines that are added in this hunk
                     dst_lines = [entry[1] for entry in dst_hunk.added_entries]
                     if len(dst_lines) == 0:
                         continue
-                    matcher = difflib.SequenceMatcher(None, src_lines, dst_lines)
-                    for block in matcher.get_matching_blocks():
+
+                    # Find all the matching blocks in the sequences of src_lines and dst_lines
+                    cross_matching_blocks = all_maximal_matches(src_lines, dst_lines)
+                    for block in cross_matching_blocks:
                         if block.size >= MIN_BLOCK_SIZE:
                             for k in range(block.size):
+                                # Map each line in the src to each line in the dst
+                                # src_idx = the matching line no in the hunk
                                 src_idx = block.a + k
                                 dst_idx = block.b + k
-                                src_key = (src.file_path, hi, src_idx)
-                                dst_key = (dst.file_path, hj, dst_idx)
+                                src_key = (src.file_path, srch_ii, src_idx)
+                                dst_key = (dst.file_path, dsth_jj, dst_idx)
                                 added_mapping.setdefault(dst_key, []).append(src_key)
                                 removed_mapping.setdefault(src_key, []).append(dst_key)
     return added_mapping, removed_mapping
