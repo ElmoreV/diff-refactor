@@ -74,3 +74,24 @@ Additionally, we can see that instead of 2 adds and one delete, we have a "split
 The different possibilities I excluded are: 
 - Blocks of codes that were unchanged, but still match the blocks of code that are added or removed.
 - The order of the blocks of code changes.
+
+# Similar tools:
+
+## Language agnostic
+
+- For moved lines of code, `git diff --color-moved` works well.
+- There are maybe extensions to the [Myers diff](https://blog.jcoglan.com/2017/02/12/the-myers-diff-algorithm-part-1/) algorithm (used in git merge) or [RatCliff-Obershelp](https://www.drdobbs.com/database/pattern-matching-the-gestalt-approach/184407970?pgno=5) algorithm (used in python difflib) that can be used to detect moves, splits and merges, but I haven't found anything. Please let me know.
+- Didn't test: Araxis Merge, Kaleidoscope, Meld, KDiff3, Diffuse, DiffMerge, Beyond Compare, P4Merge, P4Diff, TortoiseMerge, WinMerge,
+
+
+## Language based
+
+### Similarity tools
+
+- Algorithms like [SimHash](https://algonotes.readthedocs.io/en/latest/Simhash.html) and [MinHash](https://en.wikipedia.org/wiki/MinHash) used by Google for deduplicating web pages.
+[Sim](https://dickgrune.com/Programs/similarity_tester/) is a tool that detects text/code similarity in a variety of languages, mainly C.
+[CPD - Copy paste detector](https://pmd.github.io/pmd/pmd_userdocs_cpd.html) to detect duplicated code, based on some AST.
+[Simian](https://simian.quandarypeak.com) for many languages, where it detects duplicate code.
+[RefactoringMiner]((https://github.com/tsantalis/RefactoringMiner)) is a tool that detect refactors in the history of a Java project. It uses a AST based approach.
+[RefDiff](https://github.com/aserg-ufmg/RefDiff) also creates refactors, but is not a text based tool, but a syntax based tool. It supports Java, Javascript(, Go?) and C. It needs JDK 8 to run.
+[difftastic](https://github.com/Wilfred/difftastic)
