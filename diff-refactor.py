@@ -3,11 +3,11 @@ import difflib
 import re
 from dataclasses import dataclass
 from enum import Enum
-
 # --- Configuration ---
 
 # Minimal block length to trigger block header/footer.
-GROUP_THRESHOLD = 6
+GROUP_THRESHOLD = 4
+# Minimal block length to catch combines and splits.
 MIN_BLOCK_SIZE = 4
 
 ##################
@@ -120,15 +120,28 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
 ####################
 ### Mapping ########
 ####################
-class Marker(Enum):
+class BlockMarker(Enum):
     MOVED = "moved"
-    DUPLICATED = "duplicated"
+    SPLIT = "split"
     COMBINED = "combined"
-    MODIFIED = "modified"
+    UNKNOWN = "unknown"
+
+
+class LineMarker(Enum):
+    ADDED = "+"
+    REMOVED = "-"
+    COMBINED_ADDED = "C+"
+    COMBINED_REMOVED = "C-"
+    MOVED_ADDED = "M+"
+    MOVED_REMOVED = "M-"
+    SPLIT_ADDED = "S+"
+    SPLIT_REMOVED = "S-"
+    UNKNOWN = "?"
 
 
 # type alias
-MappingDict = dict[tuple[str, int, int], list[tuple[str, int, int]]]
+LocationKey = tuple[str, int, int]
+MappingDict = dict[LocationKey, list[LocationKey]]
 
 
 def all_maximal_matches(a: list, b: list, min_size: int = 1) -> list[difflib.Match]:
@@ -208,34 +221,48 @@ def build_match_mappings(
 
 
 # type alias
-MarkerDict = dict[tuple[str, int, int], Marker | None]
+LineMarkerDict = dict[LocationKey, LineMarker]
 
 
 def compute_markers_individual(
     added_mapping: MappingDict,
     removed_mapping: MappingDict,
-) -> tuple[MarkerDict, MarkerDict]:
+) -> tuple[LineMarkerDict, LineMarkerDict]:
     """Assign a marker per mapped line."""
     added_markers = {}
-    for key, src_list in added_mapping.items():
-        if len(src_list) == 1:
-            src_key = src_list[0]
-            marker = "M+" if len(removed_mapping.get(src_key, [])) == 1 else "D+"
-        elif len(src_list) > 1:
-            marker = "S+"
+    # for all elements:
+    # single source, single destination: moved
+    # single source, multiple destinations: split
+    # multiple sources, single destination: combined
+    # multiple sources, multiple destinations: split
+
+    for dst_key, src_keys in added_mapping.items():
+        if len(src_keys) == 1:
+            src_key = src_keys[0]
+            marker = (
+                LineMarker.MOVED_ADDED
+                if len(removed_mapping.get(src_key, [])) == 1
+                else LineMarker.SPLIT_ADDED
+            )
+        elif len(src_keys) > 1:
+            marker = LineMarker.COMBINED_ADDED
         else:
-            marker = None
-        added_markers[key] = marker
+            marker = LineMarker.UNKNOWN
+        added_markers[dst_key] = marker
     removed_markers = {}
-    for key, dst_list in removed_mapping.items():
-        if len(dst_list) == 1:
-            dst_key = dst_list[0]
-            marker = "M-" if len(added_mapping.get(dst_key, [])) == 1 else "S-"
-        elif len(dst_list) > 1:
-            marker = "S-"
+    for src_key, dst_keys in removed_mapping.items():
+        if len(dst_keys) == 1:
+            dst_key = dst_keys[0]
+            marker = (
+                LineMarker.MOVED_REMOVED
+                if len(added_mapping.get(dst_key, [])) == 1
+                else LineMarker.COMBINED_REMOVED
+            )
+        elif len(dst_keys) > 1:
+            marker = LineMarker.SPLIT_REMOVED
         else:
-            marker = None
-        removed_markers[key] = marker
+            marker = LineMarker.UNKNOWN
+        removed_markers[src_key] = marker
     return added_markers, removed_markers
 
 
@@ -244,11 +271,12 @@ def compute_markers_individual(
 ####################
 # Colors for markers (dull for moved, bright for unmapped).
 MARKER_COLORS = {
-    "M+": "\033[2;32m",  # dim green
-    "M-": "\033[2;31m",  # dim red
-    "D+": "\033[94m",  # bright blue
-    "S+": "\033[95m",  # bright magenta
-    "S-": "\033[96m",  # bright cyan
+    LineMarker.MOVED_ADDED: "\033[2;32m",  # dim green
+    LineMarker.MOVED_REMOVED: "\033[2;31m",  # dim red
+    LineMarker.COMBINED_ADDED: "\033[94m",  # bright blue
+    LineMarker.COMBINED_REMOVED: "\033[93m",  # bright magenta
+    LineMarker.SPLIT_ADDED: "\033[95m",  # bright cyan
+    LineMarker.SPLIT_REMOVED: "\033[96m",  # bright cyan
 }
 DEFAULT_ADDED_COLOR = "\033[1;32m"  # bright green for unmapped +
 DEFAULT_REMOVED_COLOR = "\033[1;31m"  # bright red for unmapped -
@@ -256,17 +284,19 @@ DEFAULT_REMOVED_COLOR = "\033[1;31m"  # bright red for unmapped -
 RESET = "\033[0m"
 
 
-def marker_description(marker: str) -> Marker:
-    if marker in ("M+", "M-"):
-        return Marker.MOVED
-    elif marker == "D+":
-        return Marker.DUPLICATED
-    elif marker in ("S+", "S-"):
-        return Marker.COMBINED
-    return Marker.MODIFIED
+def marker_description(marker: LineMarker) -> BlockMarker:
+    if marker in (LineMarker.MOVED_ADDED, LineMarker.MOVED_REMOVED):
+        return BlockMarker.MOVED
+    elif marker in (LineMarker.SPLIT_ADDED, LineMarker.SPLIT_REMOVED):
+        return BlockMarker.SPLIT
+    elif marker in (LineMarker.COMBINED_REMOVED, LineMarker.COMBINED_ADDED):
+        return BlockMarker.COMBINED
+    return BlockMarker.UNKNOWN
 
 
-def parse_hunk_header(header: str) -> tuple[int, int, int, int]:
+def parse_hunk_header(
+    header: str,
+) -> tuple[int | None, int | None, int | None, int | None]:
     """Extract old/new start and count from a hunk header.
     E.g., for header "@@ -12,5 +12,6 @@" return (12, 5, 12, 6)."""
     m = re.search(r"@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@", header)
@@ -281,8 +311,8 @@ def parse_hunk_header(header: str) -> tuple[int, int, int, int]:
 
 def output_annotated_diff(
     files: list[ParsedFileDiff],
-    added_markers: MarkerDict,
-    removed_markers: MarkerDict,
+    added_markers: LineMarkerDict,
+    removed_markers: LineMarkerDict,
     file_dict: dict[str, ParsedFileDiff],
     added_mapping: MappingDict,
     removed_mapping: MappingDict,
@@ -306,8 +336,8 @@ def output_annotated_diff(
                 if line.startswith("+") and not line.startswith("+++"):
                     key = (f.file_path, hi, added_counter)
                     if key in added_markers:
-                        group_lines = []
-                        group_keys = []
+                        group_lines: list[str] = []
+                        group_keys: list[LocationKey] = []
                         # Group contiguous mapped added lines.
                         while (
                             i < len(hunk.lines)
@@ -345,14 +375,14 @@ def output_annotated_diff(
                             for k, gline in zip(group_keys, group_lines):
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{added_markers[k]}{gline[1:]}{RESET}"
+                                    f"{color}{added_markers[k].value}{gline[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             for k, gline in zip(group_keys, group_lines):
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{added_markers[k]}{gline[1:]}{RESET}"
+                                    f"{color}{added_markers[k].value}{gline[1:]}{RESET}"
                                 )
                     else:
                         out_lines.append(f"{DEFAULT_ADDED_COLOR}+{line[1:]}{RESET}")
@@ -363,8 +393,8 @@ def output_annotated_diff(
                 elif line.startswith("-") and not line.startswith("---"):
                     key = (f.file_path, hi, removed_counter)
                     if key in removed_markers:
-                        group_lines = []
-                        group_keys = []
+                        group_lines: list[str] = []
+                        group_keys: list[LocationKey] = []
                         while (
                             i < len(hunk.lines)
                             and hunk.lines[i].startswith("-")
@@ -405,14 +435,14 @@ def output_annotated_diff(
                             for k, gline in zip(group_keys, group_lines):
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{removed_markers[k]}{gline[1:]}{RESET}"
+                                    f"{color}{removed_markers[k].value}{gline[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             for k, gline in zip(group_keys, group_lines):
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{removed_markers[k]}{gline[1:]}{RESET}"
+                                    f"{color}{removed_markers[k].value}{gline[1:]}{RESET}"
                                 )
                     else:
                         out_lines.append(f"{DEFAULT_REMOVED_COLOR}-{line[1:]}{RESET}")
@@ -433,11 +463,6 @@ def output_annotated_diff(
 def main():
     diff_text = sys.stdin.read()
     files = parse_diff(diff_text)
-    for f in files:
-        print(f"File: {f.file_path}")
-        print(f"Status: {f.status}")
-        for hunk in f.hunks:
-            print(f"Hunk: {hunk.added_entries}")
     file_dict = {f.file_path: f for f in files}
     added_mapping, removed_mapping = build_match_mappings(files)
     added_markers, removed_markers = compute_markers_individual(
