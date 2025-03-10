@@ -32,8 +32,16 @@ Entry = tuple[int, str]
 
 
 @dataclass
+class ParsedHunkDiffHeader:
+    old_start: int  # starting line no. in file a / the old file
+    old_count: int  # number of lines of the hunk in the old file
+    new_start: int  # starting line no. of the hunk in file b/ the new file
+    new_count: int  # number of lines of the hunk in the new file
+
+
+@dataclass
 class ParsedHunkDiff:
-    hunk_header: str
+    hunk_header: ParsedHunkDiffHeader | None
     lines: list[str]
     added_entries: list[Entry]  #
     removed_entries: list[Entry]
@@ -45,6 +53,22 @@ class ParsedFileDiff:
     file_path: str
     status: FileDiffStatus
     hunks: list[ParsedHunkDiff]
+
+
+def parse_hunk_header(
+    header: str,
+) -> ParsedHunkDiffHeader | None:
+    """Extract old/new start and count from a hunk header.
+    E.g., for header "@@ -12,5 +12,6 @@" return (12, 5, 12, 6)."""
+    m = re.search(r"@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@", header)
+    if m:
+        return ParsedHunkDiffHeader(
+            old_start=int(m.group(1)),
+            old_count=int(m.group(2)) if m.group(2) != "" else 1,
+            new_start=int(m.group(3)),
+            new_count=int(m.group(4)) if m.group(4) != "" else 1,
+        )
+    return None
 
 
 def norm_line(line):
@@ -93,7 +117,7 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             if current_hunk is not None:
                 current_hunks.append(current_hunk)
             current_hunk = ParsedHunkDiff(
-                hunk_header=line,
+                hunk_header=parse_hunk_header(line),
                 lines=[],
                 added_entries=[],
                 removed_entries=[],
@@ -301,13 +325,15 @@ MARKER_COLORS = {
     LineMarker.SPLIT_ADDED: "\033[95m",  # bright cyan
     LineMarker.SPLIT_REMOVED: "\033[96m",  # bright cyan
 }
+
+HEADER_HUNK_COLOR = "\033[1;36m"  # bright cyan for header hunk
 DEFAULT_ADDED_COLOR = "\033[1;32m"  # bright green for unmapped +
 DEFAULT_REMOVED_COLOR = "\033[1;31m"  # bright red for unmapped -
 
 RESET = "\033[0m"
 
 
-def marker_description(marker: LineMarker) -> BlockMarker:
+def block_marker_description(marker: LineMarker) -> BlockMarker:
     if marker in (LineMarker.MOVED_ADDED, LineMarker.MOVED_REMOVED):
         return BlockMarker.MOVED
     elif marker in (LineMarker.SPLIT_ADDED, LineMarker.SPLIT_REMOVED):
@@ -317,19 +343,10 @@ def marker_description(marker: LineMarker) -> BlockMarker:
     return BlockMarker.UNKNOWN
 
 
-def parse_hunk_header(
-    header: str,
-) -> tuple[int | None, int | None, int | None, int | None]:
-    """Extract old/new start and count from a hunk header.
-    E.g., for header "@@ -12,5 +12,6 @@" return (12, 5, 12, 6)."""
-    m = re.search(r"@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@", header)
-    if m:
-        old_start = int(m.group(1))
-        old_count = int(m.group(2)) if m.group(2) != "" else 1
-        new_start = int(m.group(3))
-        new_count = int(m.group(4)) if m.group(4) != "" else 1
-        return (old_start, old_count, new_start, new_count)
-    return (None, None, None, None)
+def print_hunk_header(hunk: ParsedHunkDiffHeader) -> str:
+    return (
+        f"@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@"
+    )
 
 
 def output_annotated_diff(
@@ -345,10 +362,12 @@ def output_annotated_diff(
         for header_line in f.header:
             out_lines.append(header_line)
         for hi, hunk in enumerate(f.hunks):
-            out_lines.append(hunk.hunk_header)
+            if hunk.hunk_header is not None:
+                hunk_header_line = print_hunk_header(hunk.hunk_header)
+                out_lines.append(f"{HEADER_HUNK_COLOR}{hunk_header_line}{RESET}")
             # Parse destination hunk header for new start line.
-            dst_info = parse_hunk_header(hunk.hunk_header)
-            dst_new_start = dst_info[2] if dst_info[2] is not None else 0
+            dst_info = hunk.hunk_header
+            dst_new_start = dst_info.new_start if dst_info is not None else 0
 
             i = 0
             added_counter = 0
@@ -373,20 +392,20 @@ def output_annotated_diff(
                             i += 1
                             added_counter += 1
                         if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
+                            # Output with block header/footer
                             marker = added_markers[group_keys[0]]
-                            desc = marker_description(marker)
+                            desc = block_marker_description(marker)
                             # Get source info from the mapping if available:
                             src_keys = added_mapping.get(group_keys[0], [])
                             if src_keys:
                                 first_src = src_keys[0]
                                 src_file, src_hunk_idx, src_line_idx = first_src
-                                src_hunk_header = (
+                                src_info = (
                                     file_dict[src_file].hunks[src_hunk_idx].hunk_header
                                 )
-                                src_info = parse_hunk_header(src_hunk_header)
                                 src_line = (
-                                    (src_info[0] + src_line_idx)
-                                    if src_info[0] is not None
+                                    (src_info.old_start + src_line_idx)
+                                    if src_info is not None
                                     else src_line_idx
                                 )
                             else:
@@ -402,6 +421,7 @@ def output_annotated_diff(
                                 )
                             out_lines.append(footer_blk)
                         else:
+                            # Output wihtout block header/footer
                             for k, gline in zip(group_keys, group_lines):
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
@@ -414,6 +434,7 @@ def output_annotated_diff(
 
                 # Process removed lines
                 elif line.startswith("-") and not line.startswith("---"):
+                    # Output with block header/footer
                     key = (f.file_path, hi, removed_counter)
                     if key in removed_markers:
                         group_lines: list[str] = []
@@ -430,26 +451,25 @@ def output_annotated_diff(
                             removed_counter += 1
                         if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
                             marker = removed_markers[group_keys[0]]
-                            desc = marker_description(marker)
+                            desc = block_marker_description(marker)
                             dst_keys = removed_mapping.get(group_keys[0], [])
                             if dst_keys:
                                 first_dst = dst_keys[0]
                                 dst_file, dst_hunk_idx, dst_line_idx = first_dst
-                                dst_hunk_header = (
+                                dst_info = (
                                     file_dict[dst_file].hunks[dst_hunk_idx].hunk_header
                                 )
-                                dst_info = parse_hunk_header(dst_hunk_header)
                                 dst_line = (
-                                    (dst_info[2] + dst_line_idx)
-                                    if dst_info[2] is not None
+                                    (dst_info.new_start + dst_line_idx)
+                                    if dst_info is not None
                                     else dst_line_idx
                                 )
                             else:
                                 dst_file, dst_line = "unknown", "?"
-                            src_info = parse_hunk_header(hunk.hunk_header)
+                            src_info = hunk.hunk_header
                             src_line = (
-                                (src_info[0] + group_keys[0][2])
-                                if src_info[0] is not None
+                                (src_info.old_start + group_keys[0][2])
+                                if src_info is not None
                                 else group_keys[0][2]
                             )
                             header_blk = f"----- {desc} block from {f.file_path}:{src_line} to {dst_file}:{dst_line} -----"
@@ -462,6 +482,7 @@ def output_annotated_diff(
                                 )
                             out_lines.append(footer_blk)
                         else:
+                            # Output wihtout block header/footer
                             for k, gline in zip(group_keys, group_lines):
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 out_lines.append(
@@ -471,10 +492,10 @@ def output_annotated_diff(
                         out_lines.append(f"{DEFAULT_REMOVED_COLOR}-{line[1:]}{RESET}")
                         i += 1
                         removed_counter += 1
-                else:
+                else:  # does not start with + or -
                     out_lines.append(line)
                     i += 1
-            out_lines.append("")
+            out_lines.append("")  # empty line after each hunk
     return "\n".join(out_lines)
 
 
