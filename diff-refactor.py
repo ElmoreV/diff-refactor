@@ -3,7 +3,7 @@ import difflib
 import re
 from dataclasses import dataclass
 from enum import Enum
-
+import argparse
 # --- Configuration ---
 
 # TODO: 1. There are double blocks: sometimes we have some lines that are SPLIT inside of a MOVED block
@@ -563,6 +563,15 @@ def main():
     files = parse_diff(diff_text)
     file_dict = {f.file_path: f for f in files}
     added_mapping, removed_mapping = build_match_mappings(files)
+    if DEBUG:
+        from pprint import pprint
+
+        print(
+            "(file path, hunk index, line index) -> list[(file path, hunk index, line index)]"
+        )
+        pprint(added_mapping)
+        pprint(removed_mapping)
+
     added_markers, removed_markers = compute_markers_individual(
         added_mapping, removed_mapping
     )
@@ -572,5 +581,15 @@ def main():
     print(annotated)
 
 
+DEBUG: bool = False
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="diff-refactor",
+        description="Provides a diff tailored to diffing refactorings",
+        epilog="Example: diff-refactor ",
+    )
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
+    args = parser.parse_args()
+    if args.debug:
+        DEBUG = True
     main()
