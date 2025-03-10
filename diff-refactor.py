@@ -3,12 +3,14 @@ import difflib
 import re
 from dataclasses import dataclass
 from enum import Enum
+
 # --- Configuration ---
 
 # TODO: 1. There are double blocks: sometimes we have some lines that are SPLIT inside of a MOVED block
 # TODO: 1. ctd: what should we do with these?
-# TODO: 2. The lines numbers that are output on the moved/split/combined headers blocks aren't correct.
+# TODO: 2. The lines numbers that are output on the split/combined headers blocks aren't correct?
 # TODO: 3. Remove the autojunk from the diff. (like )} or newlines).
+# TODO: 4. Sometimes recognises a combined added line in one file, but not a combined removed line in another.
 
 # Minimal block length to catch combines and splits.
 MIN_BLOCK_SIZE = 1
@@ -33,10 +35,10 @@ Entry = tuple[int, str]
 
 @dataclass
 class ParsedHunkDiffHeader:
-    old_start: int  # starting line no. in file a / the old file
-    old_count: int  # number of lines of the hunk in the old file
-    new_start: int  # starting line no. of the hunk in file b/ the new file
-    new_count: int  # number of lines of the hunk in the new file
+    old_start: int  # starting line no. in "a/file.ext"
+    old_count: int  # number of lines of the hunk in "a/file.ext"
+    new_start: int  # starting line no. of the hunk in "b/file.ext"
+    new_count: int  # number of lines of the hunk in "b/file.ext
 
 
 @dataclass
@@ -266,7 +268,6 @@ def compute_markers_individual(
     # single source, multiple destinations: split
     # multiple sources, single destination: combined
     # multiple sources, multiple destinations: split
-
     for dst_key, src_keys in added_mapping.items():
         if len(src_keys) == 1:
             src_key = src_keys[0]
@@ -369,11 +370,12 @@ def output_annotated_diff(
             dst_info = hunk.hunk_header
             dst_new_start = dst_info.new_start if dst_info is not None else 0
 
-            i = 0
+            hunk_line_idx = 0
             added_counter = 0
             removed_counter = 0
-            while i < len(hunk.lines):
-                line = hunk.lines[i]
+            neutral_counter = 0
+            while hunk_line_idx < len(hunk.lines):
+                line = hunk.lines[hunk_line_idx]
                 # Process added lines
                 if line.startswith("+") and not line.startswith("+++"):
                     key = (f.file_path, hi, added_counter)
@@ -382,20 +384,21 @@ def output_annotated_diff(
                         group_keys: list[LocationKey] = []
                         # Group contiguous mapped added lines.
                         while (
-                            i < len(hunk.lines)
-                            and hunk.lines[i].startswith("+")
-                            and not hunk.lines[i].startswith("+++")
+                            hunk_line_idx < len(hunk.lines)
+                            and hunk.lines[hunk_line_idx].startswith("+")
+                            and not hunk.lines[hunk_line_idx].startswith("+++")
                             and ((f.file_path, hi, added_counter) in added_markers)
                         ):
-                            group_lines.append(hunk.lines[i])
+                            group_lines.append(hunk.lines[hunk_line_idx])
                             group_keys.append((f.file_path, hi, added_counter))
-                            i += 1
+                            hunk_line_idx += 1
                             added_counter += 1
                         if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
                             # Output with block header/footer
                             marker = added_markers[group_keys[0]]
                             desc = block_marker_description(marker)
                             # Get source info from the mapping if available:
+
                             src_keys = added_mapping.get(group_keys[0], [])
                             if src_keys:
                                 first_src = src_keys[0]
@@ -410,26 +413,47 @@ def output_annotated_diff(
                                 )
                             else:
                                 src_file, src_line = "unknown", "?"
-                            dst_line = dst_new_start + group_keys[0][2]
+
+                            # dst_line = dst_info.new_start = line number of the hunk in the new file
+                            # group_keys[0] is the first line of the grouped added block
+                            # group_keys[0][2] is the hunk line number of the first line of the block
+                            dst_line = (
+                                dst_new_start + group_keys[0][2] + neutral_counter
+                            )
                             header_blk = f"----- {desc} block from {src_file}:{src_line} to {f.file_path}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
                             for k, gline in zip(group_keys, group_lines):
+                                cur_added_counter = k[2]
+                                cur_line = (
+                                    hunk.hunk_header.new_start
+                                    + cur_added_counter
+                                    + neutral_counter
+                                )
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{added_markers[k].value}{gline[1:]}{RESET}"
+                                    f"A{cur_line}:{color}{added_markers[k].value}{gline[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
                             for k, gline in zip(group_keys, group_lines):
+                                cur_line = (
+                                    hunk.hunk_header.new_start + k[2] + neutral_counter
+                                )
+
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{added_markers[k].value}{gline[1:]}{RESET}"
+                                    f"B{cur_line}:{color}{added_markers[k].value}{gline[1:]}{RESET}"
                                 )
                     else:
-                        out_lines.append(f"{DEFAULT_ADDED_COLOR}+{line[1:]}{RESET}")
-                        i += 1
+                        cur_line = (
+                            hunk.hunk_header.new_start + hunk_line_idx - removed_counter
+                        )
+                        out_lines.append(
+                            f"C{cur_line}:{DEFAULT_ADDED_COLOR}+{line[1:]}{RESET}"
+                        )
+                        hunk_line_idx += 1
                         added_counter += 1
 
                 # Process removed lines
@@ -440,14 +464,14 @@ def output_annotated_diff(
                         group_lines: list[str] = []
                         group_keys: list[LocationKey] = []
                         while (
-                            i < len(hunk.lines)
-                            and hunk.lines[i].startswith("-")
-                            and not hunk.lines[i].startswith("---")
+                            hunk_line_idx < len(hunk.lines)
+                            and hunk.lines[hunk_line_idx].startswith("-")
+                            and not hunk.lines[hunk_line_idx].startswith("---")
                             and ((f.file_path, hi, removed_counter) in removed_markers)
                         ):
-                            group_lines.append(hunk.lines[i])
+                            group_lines.append(hunk.lines[hunk_line_idx])
                             group_keys.append((f.file_path, hi, removed_counter))
-                            i += 1
+                            hunk_line_idx += 1
                             removed_counter += 1
                         if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
                             marker = removed_markers[group_keys[0]]
@@ -468,7 +492,11 @@ def output_annotated_diff(
                                 dst_file, dst_line = "unknown", "?"
                             src_info = hunk.hunk_header
                             src_line = (
-                                (src_info.old_start + group_keys[0][2])
+                                (
+                                    src_info.old_start
+                                    + group_keys[0][2]
+                                    + neutral_counter
+                                )
                                 if src_info is not None
                                 else group_keys[0][2]
                             )
@@ -476,25 +504,51 @@ def output_annotated_diff(
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
                             for k, gline in zip(group_keys, group_lines):
+                                cur_removed_counter = k[2]
+                                cur_line = (
+                                    hunk.hunk_header.old_start
+                                    + cur_removed_counter
+                                    + neutral_counter
+                                )
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{removed_markers[k].value}{gline[1:]}{RESET}"
+                                    f"D{cur_line}:{color}{removed_markers[k].value}{gline[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
                             for k, gline in zip(group_keys, group_lines):
+                                cur_removed_counter = k[2]
+                                cur_line = (
+                                    hunk.hunk_header.old_start
+                                    + cur_removed_counter
+                                    + neutral_counter
+                                )
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 out_lines.append(
-                                    f"{color}{removed_markers[k].value}{gline[1:]}{RESET}"
+                                    f"E{cur_line}:{color}{removed_markers[k].value}{gline[1:]}{RESET}"
                                 )
                     else:
-                        out_lines.append(f"{DEFAULT_REMOVED_COLOR}-{line[1:]}{RESET}")
-                        i += 1
+                        cur_line = (
+                            hunk.hunk_header.old_start + hunk_line_idx - added_counter
+                        )
+
+                        out_lines.append(
+                            f"F{cur_line}:{DEFAULT_REMOVED_COLOR}-{line[1:]}{RESET}"
+                        )
+                        hunk_line_idx += 1
                         removed_counter += 1
                 else:  # does not start with + or -
-                    out_lines.append(line)
-                    i += 1
+                    cur_line_a = (
+                        hunk.hunk_header.old_start + hunk_line_idx - added_counter
+                    )
+
+                    cur_line_b = (
+                        hunk.hunk_header.new_start + hunk_line_idx - removed_counter
+                    )
+                    out_lines.append(f"G{cur_line_a}/{cur_line_b}:{line}")
+                    hunk_line_idx += 1
+                    neutral_counter += 1
             out_lines.append("")  # empty line after each hunk
     return "\n".join(out_lines)
 
