@@ -151,6 +151,10 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
 ####################
 ### Mapping ########
 ####################
+
+# TODO: need to add line numbers here
+
+
 class BlockMarker(Enum):
     MOVED = "moved"
     SPLIT = "split"
@@ -173,8 +177,8 @@ class LineMarker(Enum):
 
 
 # type alias
-LocationKey = tuple[str, int, int]
-MappingDict = dict[LocationKey, list[LocationKey]]
+LineLocationKey = tuple[str, int, int]
+MappingDict = dict[LineLocationKey, list[LineLocationKey]]
 
 
 def all_maximal_matches(a: list, b: list, min_size: int = 1) -> list[difflib.Match]:
@@ -254,7 +258,7 @@ def build_match_mappings(
 
 
 # type alias
-LineMarkerDict = dict[LocationKey, LineMarker]
+LineMarkerDict = dict[LineLocationKey, LineMarker]
 
 
 def compute_markers_individual(
@@ -350,6 +354,28 @@ def print_hunk_header(hunk: ParsedHunkDiffHeader) -> str:
     )
 
 
+def process_hunk_line(
+    file,
+    hunk,
+    hunk_idx,
+    hunk_line_idx,
+    added_counter,
+    removed_counter,
+    neutral_counter,
+    added_markers,
+    removed_markers,
+    out_lines,
+):
+    raise NotImplementedError
+    return (
+        added_counter,
+        removed_counter,
+        neutral_counter,
+        hunk_line_idx,
+        out_lines,
+    )
+
+
 def output_annotated_diff(
     files: list[ParsedFileDiff],
     added_markers: LineMarkerDict,
@@ -381,7 +407,7 @@ def output_annotated_diff(
                     key = (f.file_path, hi, added_counter)
                     if key in added_markers:
                         group_lines: list[str] = []
-                        group_keys: list[LocationKey] = []
+                        group_keys: list[LineLocationKey] = []
                         # Group contiguous mapped added lines.
                         while (
                             hunk_line_idx < len(hunk.lines)
@@ -407,6 +433,7 @@ def output_annotated_diff(
                                     file_dict[src_file].hunks[src_hunk_idx].hunk_header
                                 )
                                 src_line = (
+                                    # we actually want old_start + src_line_idx - src_removed_counter)
                                     (src_info.old_start + src_line_idx)
                                     if src_info is not None
                                     else src_line_idx
@@ -462,7 +489,7 @@ def output_annotated_diff(
                     key = (f.file_path, hi, removed_counter)
                     if key in removed_markers:
                         group_lines: list[str] = []
-                        group_keys: list[LocationKey] = []
+                        group_keys: list[LineLocationKey] = []
                         while (
                             hunk_line_idx < len(hunk.lines)
                             and hunk.lines[hunk_line_idx].startswith("-")
@@ -483,6 +510,7 @@ def output_annotated_diff(
                                 dst_info = (
                                     file_dict[dst_file].hunks[dst_hunk_idx].hunk_header
                                 )
+                                # we actually want new_start + dst_line_idx - dst_removed_counter)
                                 dst_line = (
                                     (dst_info.new_start + dst_line_idx)
                                     if dst_info is not None
