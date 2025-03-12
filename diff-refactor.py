@@ -29,8 +29,11 @@ class FileDiffStatus(Enum):
     MODIFIED = "modified"
 
 
-# type alias
-Entry = tuple[int, str]
+class LineDiffStatus(Enum):
+    UNKNOWN = "unknown"
+    ADDED = "added"
+    DELETED = "deleted"
+    UNCHANGED = "unchanged"
 
 
 @dataclass
@@ -42,11 +45,19 @@ class ParsedHunkDiffHeader:
 
 
 @dataclass
+class ParsedHunkDiffLine:
+    line_idx: int
+    status: LineDiffStatus
+    content: str
+    normed_content: str
+    absolute_old_line_no: int | None
+    absolute_new_line_no: int | None
+
+
+@dataclass
 class ParsedHunkDiff:
     hunk_header: ParsedHunkDiffHeader | None
-    lines: list[str]
-    added_entries: list[Entry]  #
-    removed_entries: list[Entry]
+    lines: list[ParsedHunkDiffLine]
 
 
 @dataclass
@@ -84,7 +95,8 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
     current_hunks: list[ParsedHunkDiff] = []
     current_hunk: ParsedHunkDiff | None = None
     status: FileDiffStatus = FileDiffStatus.MODIFIED
-
+    cur_old_count = 0
+    cur_new_count = 0
     for line in diff_text.splitlines():
         if line.startswith("diff --git"):
             # diff --git a/src/App.js b/src/App.js
@@ -105,6 +117,8 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             current_file = parts[3][2:] if len(parts) >= 4 else "unknown"
             current_hunks = []
             current_hunk = None
+            cur_old_count = 0
+            cur_new_count = 0
             status = FileDiffStatus.MODIFIED
         elif line.startswith("new file mode"):
             # new file mode 100644
@@ -121,17 +135,33 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             current_hunk = ParsedHunkDiff(
                 hunk_header=parse_hunk_header(line),
                 lines=[],
-                added_entries=[],
-                removed_entries=[],
             )
         else:
             if current_hunk is not None:
                 idx = len(current_hunk.lines)
-                current_hunk.lines.append(line)
+                new_line = ParsedHunkDiffLine(
+                    line_idx=idx,
+                    status=LineDiffStatus.UNKNOWN,
+                    content=line,
+                    normed_content=norm_line(line),
+                    absolute_old_line_no=current_hunk.hunk_header.old_start
+                    + cur_old_count,
+                    absolute_new_line_no=current_hunk.hunk_header.new_start
+                    + cur_new_count,
+                )
                 if line.startswith("+") and not line.startswith("+++"):
-                    current_hunk.added_entries.append((idx, norm_line(line)))
+                    new_line.status = LineDiffStatus.ADDED
+                    new_line.absolute_old_line_no = None
+                    cur_new_count += 1
                 elif line.startswith("-") and not line.startswith("---"):
-                    current_hunk.removed_entries.append((idx, norm_line(line)))
+                    new_line.status = LineDiffStatus.DELETED
+                    new_line.absolute_new_line_no = None
+                    cur_old_count += 1
+                else:  # Contect, no added/removed lines
+                    new_line.status = LineDiffStatus.UNCHANGED
+                    cur_old_count += 1
+                    cur_new_count += 1
+                current_hunk.lines.append(new_line)
             else:
                 current_header.append(line)
     if current_file is not None:
@@ -232,12 +262,22 @@ def build_match_mappings(
                 continue
             for srch_ii, src_hunk in enumerate(src.hunks):
                 # Find all the normed lines that are removed in this hunk
-                src_lines = [entry[1] for entry in src_hunk.removed_entries]
+                removed_entries = {
+                    (line.line_idx, line.normed_content)
+                    for line in src_hunk.lines
+                    if line.status == LineDiffStatus.DELETED
+                }
+                src_lines = [entry[1] for entry in removed_entries]
                 if len(src_lines) == 0:
                     continue
                 for dsth_jj, dst_hunk in enumerate(dst.hunks):
                     # Find all the normed lines that are added in this hunk
-                    dst_lines = [entry[1] for entry in dst_hunk.added_entries]
+                    added_entries = {
+                        (line.line_idx, line.normed_content)
+                        for line in dst_hunk.lines
+                        if line.status == LineDiffStatus.ADDED
+                    }
+                    dst_lines = [entry[1] for entry in added_entries]
                     if len(dst_lines) == 0:
                         continue
 
@@ -401,7 +441,7 @@ def output_annotated_diff(
             removed_counter = 0
             neutral_counter = 0
             while hunk_line_idx < len(hunk.lines):
-                line = hunk.lines[hunk_line_idx]
+                line = hunk.lines[hunk_line_idx].content
                 # Process added lines
                 if line.startswith("+") and not line.startswith("+++"):
                     key = (f.file_path, hi, added_counter)
@@ -411,11 +451,11 @@ def output_annotated_diff(
                         # Group contiguous mapped added lines.
                         while (
                             hunk_line_idx < len(hunk.lines)
-                            and hunk.lines[hunk_line_idx].startswith("+")
-                            and not hunk.lines[hunk_line_idx].startswith("+++")
+                            and hunk.lines[hunk_line_idx].content.startswith("+")
+                            and not hunk.lines[hunk_line_idx].content.startswith("+++")
                             and ((f.file_path, hi, added_counter) in added_markers)
                         ):
-                            group_lines.append(hunk.lines[hunk_line_idx])
+                            group_lines.append(hunk.lines[hunk_line_idx].content)
                             group_keys.append((f.file_path, hi, added_counter))
                             hunk_line_idx += 1
                             added_counter += 1
@@ -492,11 +532,11 @@ def output_annotated_diff(
                         group_keys: list[LineLocationKey] = []
                         while (
                             hunk_line_idx < len(hunk.lines)
-                            and hunk.lines[hunk_line_idx].startswith("-")
-                            and not hunk.lines[hunk_line_idx].startswith("---")
+                            and hunk.lines[hunk_line_idx].content.startswith("-")
+                            and not hunk.lines[hunk_line_idx].content.startswith("---")
                             and ((f.file_path, hi, removed_counter) in removed_markers)
                         ):
-                            group_lines.append(hunk.lines[hunk_line_idx])
+                            group_lines.append(hunk.lines[hunk_line_idx].content)
                             group_keys.append((f.file_path, hi, removed_counter))
                             hunk_line_idx += 1
                             removed_counter += 1
