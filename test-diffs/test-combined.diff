@@ -1,0 +1,31 @@
+diff --git a/a-combined.txt b/b-combined.txt
+index 6b7e0d2..901229a 100644
+--- a/a-combined.txt
++++ b/b-combined.txt
+@@ -1,23 +1,7 @@
+ neutral line 1
+-line 1
+-line 2
+-line 3
+-line 4
+ neutral line 2
+-line 1
+-line 2
+-line 3
+-line 4
+ neutral line 3
+-line 1
+-line 2
+-line 3
+-line 4
+ neutral line 4
+-line 1
+-line 2
+-line 3
+-line 4
+ neutral line 5
++ line 1
++ line 2
++ line 3
++ line 4
+ neutral line 6
