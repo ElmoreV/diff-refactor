@@ -8,9 +8,9 @@ import argparse
 
 # TODO: 1. There are double blocks: sometimes we have some lines that are SPLIT inside of a MOVED block
 # TODO: 1. ctd: what should we do with these?
-# TODO: 2. The lines numbers that are output on the split/combined headers blocks aren't correct?
-# TODO: 3. Remove the autojunk from the diff. (like )} or newlines).
-# TODO: 4. Sometimes recognises a combined added line in one file, but not a combined removed line in another.
+# TODO: 2. Remove the autojunk from the diff. (like )} or newlines).
+# TODO: 3. Sometimes recognises a combined added line in one file, but not a combined removed line in another.
+# TODO: 4. See: test-swap-complex.diff, it does care about the order of lines in a block!
 
 # Minimal block length to catch combines and splits.
 MIN_BLOCK_SIZE = 1
@@ -262,25 +262,22 @@ def build_match_mappings(
                 continue
             for srch_ii, src_hunk in enumerate(src.hunks):
                 # Find all the normed lines that are removed in this hunk
-                removed_entries = {
-                    (line.line_idx, line.normed_content)
+                src_lines = [
+                    line.normed_content
                     for line in src_hunk.lines
                     if line.status == LineDiffStatus.DELETED
-                }
-                src_lines = [entry[1] for entry in removed_entries]
+                ]
                 if len(src_lines) == 0:
                     continue
                 for dsth_jj, dst_hunk in enumerate(dst.hunks):
                     # Find all the normed lines that are added in this hunk
-                    added_entries = {
-                        (line.line_idx, line.normed_content)
+                    dst_lines = [
+                        line.normed_content
                         for line in dst_hunk.lines
                         if line.status == LineDiffStatus.ADDED
-                    }
-                    dst_lines = [entry[1] for entry in added_entries]
+                    ]
                     if len(dst_lines) == 0:
                         continue
-
                     # Find all the matching blocks in the sequences of src_lines and dst_lines
                     cross_matching_blocks = all_maximal_matches(src_lines, dst_lines)
                     for block in cross_matching_blocks:
@@ -441,9 +438,9 @@ def output_annotated_diff(
             removed_counter = 0
             neutral_counter = 0
             while hunk_line_idx < len(hunk.lines):
-                line = hunk.lines[hunk_line_idx].content
+                line = hunk.lines[hunk_line_idx]
                 # Process added lines
-                if line.startswith("+") and not line.startswith("+++"):
+                if line.status == LineDiffStatus.ADDED:
                     key = (f.file_path, hi, added_counter)
                     if key in added_markers:
                         group_lines: list[str] = []
@@ -451,8 +448,7 @@ def output_annotated_diff(
                         # Group contiguous mapped added lines.
                         while (
                             hunk_line_idx < len(hunk.lines)
-                            and hunk.lines[hunk_line_idx].content.startswith("+")
-                            and not hunk.lines[hunk_line_idx].content.startswith("+++")
+                            and hunk.lines[hunk_line_idx].status == LineDiffStatus.ADDED
                             and ((f.file_path, hi, added_counter) in added_markers)
                         ):
                             group_lines.append(hunk.lines[hunk_line_idx].content)
@@ -518,13 +514,13 @@ def output_annotated_diff(
                             hunk.hunk_header.new_start + hunk_line_idx - removed_counter
                         )
                         out_lines.append(
-                            f"C{cur_line}:{DEFAULT_ADDED_COLOR}+{line[1:]}{RESET}"
+                            f"C{cur_line}:{DEFAULT_ADDED_COLOR}+{line.content[1:]}{RESET}"
                         )
                         hunk_line_idx += 1
                         added_counter += 1
 
                 # Process removed lines
-                elif line.startswith("-") and not line.startswith("---"):
+                elif line.status == LineDiffStatus.DELETED: 
                     # Output with block header/footer
                     key = (f.file_path, hi, removed_counter)
                     if key in removed_markers:
@@ -532,8 +528,8 @@ def output_annotated_diff(
                         group_keys: list[LineLocationKey] = []
                         while (
                             hunk_line_idx < len(hunk.lines)
-                            and hunk.lines[hunk_line_idx].content.startswith("-")
-                            and not hunk.lines[hunk_line_idx].content.startswith("---")
+                            and hunk.lines[hunk_line_idx].status
+                            == LineDiffStatus.DELETED
                             and ((f.file_path, hi, removed_counter) in removed_markers)
                         ):
                             group_lines.append(hunk.lines[hunk_line_idx].content)
@@ -602,7 +598,7 @@ def output_annotated_diff(
                         )
 
                         out_lines.append(
-                            f"F{cur_line}:{DEFAULT_REMOVED_COLOR}-{line[1:]}{RESET}"
+                            f"F{cur_line}:{DEFAULT_REMOVED_COLOR}-{line.content[1:]}{RESET}"
                         )
                         hunk_line_idx += 1
                         removed_counter += 1
@@ -614,7 +610,7 @@ def output_annotated_diff(
                     cur_line_b = (
                         hunk.hunk_header.new_start + hunk_line_idx - removed_counter
                     )
-                    out_lines.append(f"G{cur_line_a}/{cur_line_b}:{line}")
+                    out_lines.append(f"G{cur_line_a}/{cur_line_b}:{line.content}")
                     hunk_line_idx += 1
                     neutral_counter += 1
             out_lines.append("")  # empty line after each hunk
@@ -631,13 +627,16 @@ def main():
     files = parse_diff(diff_text)
     file_dict = {f.file_path: f for f in files}
     added_mapping, removed_mapping = build_match_mappings(files)
+    print(DEBUG)
     if DEBUG:
         from pprint import pprint
 
         print(
             "(file path, hunk index, line index) -> list[(file path, hunk index, line index)]"
         )
+        print("added mapping")
         pprint(added_mapping)
+        print("removed mapping")
         pprint(removed_mapping)
 
     added_markers, removed_markers = compute_markers_individual(
