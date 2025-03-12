@@ -637,7 +637,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="diff-refactor",
         description="Provides a diff tailored to diffing refactorings",
-        epilog="Example: diff-refactor ",
+        epilog="Example: python diff-refactor -v < changes.diff",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose output"
