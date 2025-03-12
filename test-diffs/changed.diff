@@ -1,0 +1,2115 @@
+diff --git a/src/App.js b/src/App.js
+index c9322e4..83b3a6c 100644
+--- a/src/App.js
++++ b/src/App.js
+@@ -2,7 +2,7 @@ import ViewSelector from "./ViewSelector";
+ import TaskList from "./TaskViews/TaskList.js";
+ import PlannedList from "./TaskViews/PlannedList.js";
+ import { useState } from "react";
+-import ImportExport from "./ImportExport";
++import ImportExport from "./ImportExport/ImportExport.tsx";
+ import Theme from "./Theme";
+ import AddTaskView from "./TaskViews/NewTaskList.js";
+ import { initialTasksV1, initialTopicsV1 } from "./InitialState_V1.ts";
+diff --git a/src/AppV2.js b/src/AppV2.js
+index fdb8f42..2f01c54 100644
+--- a/src/AppV2.js
++++ b/src/AppV2.js
+@@ -2,7 +2,7 @@ import ViewSelector from "./ViewSelector";
+ import TaskList from "./TaskViews/TaskList.js";
+ import PlannedList from "./TaskViews/PlannedList.js";
+ import { useState } from "react";
+-import ImportExport from "./ImportExport";
++import ImportExport from "./ImportExport/ImportExport.tsx";
+ import Theme from "./Theme";
+ import AddTaskView from "./TaskViews/NewTaskList.js";
+ import { initialTasksV1, initialTopicsV1 } from "./InitialState_V1.ts";
+@@ -65,6 +65,8 @@ function AppV2() {
+ 
+       <div className="App">
+         <div className="contents">
++          {/* <ImportExport appData={appData} setAppData={setAppData} /> */}
++
+           <ViewSelector viewSetter={setView} />
+           {/* {view === VIEW_ADD_TASKS && <AddTaskView
+             tasks={tasks}
+diff --git a/src/Converter.js b/src/Converter.js
+deleted file mode 100644
+index f96183f..0000000
+--- a/src/Converter.js
++++ /dev/null
+@@ -1,256 +0,0 @@
+-// Format definitions
+-// Old topic-tasks
+-//  topics =  [
+-//    {title:"str",id:num,unfolded:bool,subtopics:[
+-// list of topics , ....
+-//     ]}
+-//     ]
+-// tasks = [
+-//      {taskName:"str",key:num,topics:["str=topic.title",...],completed:bool},
+-//       ...
+-// ]
+-// }
+-// 25.02.2024 Topic Tasks (choice between id and key is not important
+-// let's use id, because they're internal)
+-// topics =  [
+-//     {name:"str",id:num,unfolded:bool,
+-//      subtopics:[list of topics , ...]}
+-//     ]
+-// tasks = [
+-//      {name:"str",id:num,topics:[topic_id1, topic_id2,...],completed:bool},
+-//       ...
+-// ]
+-// }
+-
+-// Relational 25.02.2024
+-// Normalized
+-// topics
+-// + id [PK] : int
+-// + name : str
+-// - unfolded : bool
+-
+-// topic_subtopics
+-// + topic_id [FK] : int
+-// + subtopic_id [FK] : int
+-
+-// tasks
+-// + id [PK] : int
+-// + name : str
+-// - completed : bool
+-
+-// topic_tasks
+-// + topic_id [FK]
+-// + task_id [FK]
+-// Hierarchical 25.02.2024
+-//topic_hierarchy
+-// topic_obj = [name, id, subtopics=[subtopic_obj_1,subtopic_obj_2], tasks = [task_id_1, task_id_2]]
+-// tasks = [{id,name,completed},...]
+-const convert_old_topic_tasks_to_new_topic_tasks = (topics, tasks) => {
+-  console.log("Old to new conversion");
+-  let new_topics = [];
+-  let new_tasks = [];
+-  let topics_table = { name: [], id: [] };
+-  /*
+-    // Recurse through topics
+-    // for every topic, save it in the topics_table (topic_name, topic_id)
+-    // copy over topic.title to topic.name
+-    // copy over topic.id and topic.unfolded
+-    */
+-  const recurse_topics = (subtopic) => {
+-    var new_topic = {
+-      name: subtopic.title,
+-      id: subtopic.id,
+-      unfolded: subtopic.unfolded,
+-      subtopics: [],
+-    };
+-    topics_table.name = topics_table.name.concat(subtopic.title);
+-    topics_table.id = topics_table.id.concat(subtopic.id);
+-    new_topic.subtopics = subtopic.subtopics.map((t) => {
+-      return recurse_topics(t);
+-    });
+-    return new_topic;
+-  };
+-  new_topics = topics.map((t) => {
+-    return recurse_topics(t);
+-  });
+-
+-  /*
+-    // every task:
+-    // copy over taskName to name
+-    // copy over key to id
+-    // copy over completed
+-    // find the topic_id for every topic_name in topics 
+-    */
+-  const get_topic_id = (tt) => {
+-    //idx= topics_table.name.findIndex(tt)
+-    let idx = topics_table.name.findIndex((ttt) => ttt == tt);
+-    return topics_table.id[idx];
+-    // return topics_table.id[idx]
+-  };
+-  const handle_task = (t) => {
+-    let new_t = {
+-      name: t.taskName,
+-      id: t.key,
+-      completed: t.completed,
+-      thisWeek: t.thisWeek,
+-      topics: t.topics.map((tt) => get_topic_id(tt)),
+-    };
+-    // console.debug(new_t)
+-    // console.debug(t)
+-    return new_t;
+-  };
+-  new_tasks = tasks.map((t) => handle_task(t));
+-  // console.debug(new_tasks)
+-  return [new_topics, new_tasks];
+-};
+-
+-const convert_new_topic_tasks_to_old_topic_tasks = (topics, tasks) => {
+-  console.log("New to old conversion");
+-  let old_topics = [];
+-  let old_tasks = [];
+-  let topics_table = { name: [], id: [] };
+-  /*
+-    // Recurse through topics
+-    // for every topic, save it in the topics_table (topic_name, topic_id)
+-    // copy over topic.title to topic.name
+-    // copy over topic.id and topic.unfolded
+-    */
+-  const recurse_topics = (subtopic) => {
+-    var old_topic = {
+-      title: subtopic.name,
+-      id: subtopic.id,
+-      unfolded: subtopic.unfolded,
+-      subtopics: [],
+-    };
+-    topics_table.name = topics_table.name.concat(subtopic.name);
+-    topics_table.id = topics_table.id.concat(subtopic.id);
+-    old_topic.subtopics = subtopic.subtopics.map((t) => {
+-      return recurse_topics(t);
+-    });
+-    return old_topic;
+-  };
+-  old_topics = topics.map((t) => {
+-    return recurse_topics(t);
+-  });
+-
+-  /*
+-    // every task:
+-    // copy over taskName to name
+-    // copy over key to id
+-    // copy over completed
+-    // find the topic_id for every topic_name in topics 
+-    */
+-  const get_topic_name = (tt) => {
+-    //idx= topics_table.name.findIndex(tt)
+-    let idx = topics_table.id.findIndex((ttt) => ttt == tt);
+-    return topics_table.name[idx];
+-    // return topics_table.id[idx]
+-  };
+-  const handle_task = (t) => {
+-    let old_t = {
+-      taskName: t.name,
+-      key: t.id,
+-      completed: t.completed,
+-      thisWeek: t.thisWeek,
+-      topics: t.topics.map((tt) => get_topic_name(tt)),
+-    };
+-    // console.debug(old_t)
+-    // console.debug(t)
+-    return old_t;
+-  };
+-  old_tasks = tasks.map((t) => handle_task(t));
+-  // console.debug(old_tasks)
+-  return [old_topics, old_tasks];
+-};
+-
+-const convert_relational_to_topic_tasks = (
+-  topic_table,
+-  topic_subtopic_table,
+-  task_table,
+-  topic_task_interaction_table
+-) => {
+-  // relational to new topic tasks
+-  return;
+-};
+-
+-const convert_topic_tasks_to_relational = (topics, tasks) => {
+-  //     // new_topic_tasks to relational
+-
+-  let topic_table = { id: [], name: [], unfolded: [] };
+-  let topic_subtopic_table = { topic_id: [], subtopic_id: [] };
+-  let task_table = { id: [], name: [], completed: [] }; //Done
+-  let topic_task_table = { topic_id: [], task_id: [] };
+-  tasks.map((t) => {
+-    task_table.id = task_table.id.concat(t.id);
+-    task_table.name = task_table.name.concat(t.name);
+-    task_table.completed = task_table.completed.concat(t.completed);
+-  });
+-
+-  const recurse_topics = (subtopic) => {
+-    var new_topic = {
+-      name: subtopic.name,
+-      id: subtopic.id,
+-      // unfolded:subtopic.unfolded,
+-      // subtopics:[]
+-    };
+-    topic_table.name = topic_table.name.concat(subtopic.name);
+-    topic_table.id = topic_table.id.concat(subtopic.id);
+-    topic_table.unfolded = topic_table.unfolded.concat(subtopic.unfolded);
+-    let subtopics = subtopic.subtopics.map((t) => {
+-      return recurse_topics(t);
+-    });
+-    console.log(subtopics);
+-    subtopics.map((st) => {
+-      console.log(st);
+-      topic_subtopic_table.topic_id = topic_subtopic_table.topic_id.concat(
+-        subtopic.id
+-      );
+-      topic_subtopic_table.subtopic_id =
+-        topic_subtopic_table.subtopic_id.concat(st.id);
+-    });
+-    return new_topic;
+-  };
+-  topics.map((t) => recurse_topics(t));
+-  const get_topic_id = (topic_name) => {
+-    //idx= topics_table.name.findIndex(tt)
+-    console.debug(topic_name);
+-    console.debug(topic_table.name);
+-    let idx = topic_table.name.findIndex((ttt) => ttt == topic_name);
+-    return topic_table.id[idx];
+-    // return topics_table.id[idx]
+-  };
+-  tasks.map((task) => {
+-    // go through t.topics
+-    // find relevant topic_id
+-    // add task_id:topic_id
+-    task.topics.map((topic_id) => {
+-      topic_task_table.topic_id = topic_task_table.topic_id.concat(topic_id);
+-      topic_task_table.task_id = topic_task_table.task_id.concat(task.id);
+-    });
+-  });
+-
+-  //     const parse_topics_r=()=>{
+-  //         // add topic to system
+-  //         // if tasks have this topic: add topic and task to topic_task
+-  //         //
+-  //     }
+-
+-  return [topic_table, topic_subtopic_table, task_table, topic_task_table];
+-};
+-
+-// const convert_topic_tasks_to_hierarchical=(topic,tasks)=>{
+-//     // new_topic_tasks to hierarchical
+-
+-//     return [topic_hierarchy, tasks]
+-// }
+-
+-// const convert_hierarchical_to_topic_tasks= (topic_hierarchy, tasks)=>{
+-
+-//     return [topics,tasks]
+-// }
+-
+-// export default Converter
+-export default convert_old_topic_tasks_to_new_topic_tasks;
+-export { convert_topic_tasks_to_relational };
+-export { convert_old_topic_tasks_to_new_topic_tasks };
+-export { convert_new_topic_tasks_to_old_topic_tasks };
+diff --git a/src/Converters/Migration_V0_v1/UpdateV0ToV1.ts b/src/Converters/Migration_V0_v1/UpdateV0ToV1.ts
+new file mode 100644
+index 0000000..48670f8
+--- /dev/null
++++ b/src/Converters/Migration_V0_v1/UpdateV0ToV1.ts
+@@ -0,0 +1,129 @@
++import { V0_Task, V0_Topic } from "../V0_types";
++import { V1_Task, V1_Topic } from "../V1_types";
++
++// 25.02.2024 Topic Tasks (choice between id and key is not important
++// let's use id, because they're internal)
++
++export const convert_v0_to_v1 = (
++  topics: V0_Topic[],
++  tasks: V0_Task[]
++): [V1_Topic[], V1_Task[]] => {
++  console.log("Old to new conversion");
++  let new_topics = [];
++  let new_tasks = [];
++  let topics_table = { name: [], id: [] };
++  /*
++      // Recurse through topics
++      // for every topic, save it in the topics_table (topic_name, topic_id)
++      // copy over topic.title to topic.name
++      // copy over topic.id and topic.unfolded
++      */
++  const recurse_topics = (subtopic: V0_Topic) => {
++    var new_topic = {
++      name: subtopic.title,
++      id: subtopic.id,
++      unfolded: subtopic.unfolded,
++      subtopics: [],
++    };
++    topics_table.name = topics_table.name.concat(subtopic.title);
++    topics_table.id = topics_table.id.concat(subtopic.id);
++    new_topic.subtopics = subtopic.subtopics.map((t) => {
++      return recurse_topics(t);
++    });
++    return new_topic;
++  };
++  new_topics = topics.map((t) => {
++    return recurse_topics(t);
++  });
++
++  /*
++      // every task:
++      // copy over taskName to name
++      // copy over key to id
++      // copy over completed
++      // find the topic_id for every topic_name in topics 
++      */
++  const get_topic_id = (tt) => {
++    //idx= topics_table.name.findIndex(tt)
++    let idx = topics_table.name.findIndex((ttt) => ttt == tt);
++    return topics_table.id[idx];
++    // return topics_table.id[idx]
++  };
++  const handle_task = (t) => {
++    let new_t = {
++      name: t.taskName,
++      id: t.key,
++      completed: t.completed,
++      thisWeek: t.thisWeek,
++      topics: t.topics.map((tt) => get_topic_id(tt)),
++    };
++    // console.debug(new_t)
++    // console.debug(t)
++    return new_t;
++  };
++  new_tasks = tasks.map((t) => handle_task(t));
++  // console.debug(new_tasks)
++  return [new_topics, new_tasks];
++};
++
++export const convert_v1_to_v0 = (
++  topics: V1_Topic[],
++  tasks: V1_Task[]
++): [V0_Topic[], V0_Task[]] => {
++  console.log("New to old conversion");
++  let old_topics = [];
++  let old_tasks = [];
++  let topics_table = { name: [], id: [] };
++  /*
++      // Recurse through topics
++      // for every topic, save it in the topics_table (topic_name, topic_id)
++      // copy over topic.title to topic.name
++      // copy over topic.id and topic.unfolded
++      */
++  const recurse_topics = (subtopic: V1_Topic) => {
++    var old_topic = {
++      title: subtopic.name,
++      id: subtopic.id,
++      unfolded: subtopic.unfolded,
++      subtopics: [],
++    };
++    topics_table.name = topics_table.name.concat(subtopic.name);
++    topics_table.id = topics_table.id.concat(subtopic.id);
++    old_topic.subtopics = subtopic.subtopics.map((t) => {
++      return recurse_topics(t);
++    });
++    return old_topic;
++  };
++  old_topics = topics.map((t) => {
++    return recurse_topics(t);
++  });
++
++  /*
++      // every task:
++      // copy over taskName to name
++      // copy over key to id
++      // copy over completed
++      // find the topic_id for every topic_name in topics 
++      */
++  const get_topic_name = (tt) => {
++    //idx= topics_table.name.findIndex(tt)
++    let idx = topics_table.id.findIndex((ttt) => ttt == tt);
++    return topics_table.name[idx];
++    // return topics_table.id[idx]
++  };
++  const handle_task = (t) => {
++    let old_t = {
++      taskName: t.name,
++      key: t.id,
++      completed: t.completed,
++      thisWeek: t.thisWeek,
++      topics: t.topics.map((tt) => get_topic_name(tt)),
++    };
++    // console.debug(old_t)
++    // console.debug(t)
++    return old_t;
++  };
++  old_tasks = tasks.map((t) => handle_task(t));
++  // console.debug(old_tasks)
++  return [old_topics, old_tasks];
++};
+diff --git a/src/Converters/Unused/Other_data_structures.ts b/src/Converters/Unused/Other_data_structures.ts
+new file mode 100644
+index 0000000..e8d6888
+--- /dev/null
++++ b/src/Converters/Unused/Other_data_structures.ts
+@@ -0,0 +1,112 @@
++// Relational 25.02.2024
++// Normalized
++// topics
++// + id [PK] : int
++// + name : str
++// - unfolded : bool
++
++// topic_subtopics
++// + topic_id [FK] : int
++// + subtopic_id [FK] : int
++
++// tasks
++// + id [PK] : int
++// + name : str
++// - completed : bool
++
++// topic_tasks
++// + topic_id [FK]
++// + task_id [FK]
++// Hierarchical 25.02.2024
++//topic_hierarchy
++// topic_obj = [name, id, subtopics=[subtopic_obj_1,subtopic_obj_2], tasks = [task_id_1, task_id_2]]
++// tasks = [{id,name,completed},...]
++
++const convert_relational_to_topic_tasks = (
++  topic_table,
++  topic_subtopic_table,
++  task_table,
++  topic_task_interaction_table
++) => {
++  // relational to new topic tasks
++  return;
++};
++
++const convert_topic_tasks_to_relational = (topics, tasks) => {
++  //     // new_topic_tasks to relational
++
++  let topic_table = { id: [], name: [], unfolded: [] };
++  let topic_subtopic_table = { topic_id: [], subtopic_id: [] };
++  let task_table = { id: [], name: [], completed: [] }; //Done
++  let topic_task_table = { topic_id: [], task_id: [] };
++  tasks.map((t) => {
++    task_table.id = task_table.id.concat(t.id);
++    task_table.name = task_table.name.concat(t.name);
++    task_table.completed = task_table.completed.concat(t.completed);
++  });
++
++  const recurse_topics = (subtopic) => {
++    var new_topic = {
++      name: subtopic.name,
++      id: subtopic.id,
++      // unfolded:subtopic.unfolded,
++      // subtopics:[]
++    };
++    topic_table.name = topic_table.name.concat(subtopic.name);
++    topic_table.id = topic_table.id.concat(subtopic.id);
++    topic_table.unfolded = topic_table.unfolded.concat(subtopic.unfolded);
++    let subtopics = subtopic.subtopics.map((t) => {
++      return recurse_topics(t);
++    });
++    console.log(subtopics);
++    subtopics.map((st) => {
++      console.log(st);
++      topic_subtopic_table.topic_id = topic_subtopic_table.topic_id.concat(
++        subtopic.id
++      );
++      topic_subtopic_table.subtopic_id =
++        topic_subtopic_table.subtopic_id.concat(st.id);
++    });
++    return new_topic;
++  };
++  topics.map((t) => recurse_topics(t));
++  const get_topic_id = (topic_name) => {
++    //idx= topics_table.name.findIndex(tt)
++    console.debug(topic_name);
++    console.debug(topic_table.name);
++    let idx = topic_table.name.findIndex((ttt) => ttt == topic_name);
++    return topic_table.id[idx];
++    // return topics_table.id[idx]
++  };
++  tasks.map((task) => {
++    // go through t.topics
++    // find relevant topic_id
++    // add task_id:topic_id
++    task.topics.map((topic_id) => {
++      topic_task_table.topic_id = topic_task_table.topic_id.concat(topic_id);
++      topic_task_table.task_id = topic_task_table.task_id.concat(task.id);
++    });
++  });
++
++  //     const parse_topics_r=()=>{
++  //         // add topic to system
++  //         // if tasks have this topic: add topic and task to topic_task
++  //         //
++  //     }
++
++  return [topic_table, topic_subtopic_table, task_table, topic_task_table];
++};
++
++// const convert_topic_tasks_to_hierarchical=(topic,tasks)=>{
++//     // new_topic_tasks to hierarchical
++
++//     return [topic_hierarchy, tasks]
++// }
++
++// const convert_hierarchical_to_topic_tasks= (topic_hierarchy, tasks)=>{
++
++//     return [topics,tasks]
++// }
++
++// export default Converter
++export { convert_topic_tasks_to_relational };
+diff --git a/src/Converters/V0_types.ts b/src/Converters/V0_types.ts
+index 3fe45ab..10f6463 100644
+--- a/src/Converters/V0_types.ts
++++ b/src/Converters/V0_types.ts
+@@ -1,29 +1,18 @@
+ import { FinishedState } from "../Tasks/TaskInterfaces";
+ 
+-interface V1_Topic {
++interface V0_Topic {
+   title: string;
+   id: number;
+   unfolded: boolean;
+-  subtopics: V1_Topic[];
++  subtopics: V0_Topic[];
+ }
+ 
+-interface V1_Task {
+-  name: string;
+-  id: number;
+-  topics: number[];
+-  topicViewIndices: number[];
+-  subTaskIds: number[];
++interface V0_Task {
++  taskName: string;
++  key: number;
++  topics: string[]; // matched to topic.title
+   completed: boolean;
+-  finishStatus: FinishedState;
+   thisWeek: boolean;
+-  repeated: boolean;
+-  scheduled: boolean;
+-  weekOrderIndex: number;
+-  unfolded: boolean;
+-
+-  dueTime: Date | undefined;
+-  transitiveDueTime: Date | undefined;
+-  lastFinished: Date | undefined;
+ }
+ 
+-export { V1_Topic, V1_Task };
++export { V0_Topic, V0_Task };
+diff --git a/src/ImportExport.js b/src/ImportExport.js
+deleted file mode 100644
+index 9a46564..0000000
+--- a/src/ImportExport.js
++++ /dev/null
+@@ -1,677 +0,0 @@
+-import { useState, useRef, useEffect } from "react";
+-import YAML from "yaml";
+-import {
+-  convert_old_topic_tasks_to_new_topic_tasks,
+-  convert_new_topic_tasks_to_old_topic_tasks,
+-} from "./Converter";
+-import { sanitizeWeekOrderIndex2 } from "./ADG/ModifyFuncGeneratorsV1.ts";
+-import structuredClone from "@ungap/structured-clone";
+-var hash = require("object-hash");
+-
+-const ImportExport = (props) => {
+-  console.debug("Rendering ImportExport");
+-  const { appData, setAppData } = props;
+-  const { topics, tasks } = appData;
+-
+-  const [taskHash, setTaskHash] = useState(null);
+-  const [topicHash, setTopicHash] = useState(null);
+-  const [loadedTaskHash, setLoadedTaskHash] = useState(null);
+-  const [loadedTopicHash, setLoadedTopicHash] = useState(null);
+-  const [savedTaskHash, setSavedTaskHash] = useState(null);
+-  const [savedTopicHash, setSavedTopicHash] = useState(null);
+-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+-
+-  const fileInputRef = useRef(null);
+-  const fileNameRef = useRef("");
+-  const fileNameRefComplete = useRef("");
+-  const inputVersion = (tasks, topics) => {
+-    console.debug(tasks.length);
+-    console.debug("taskName" in tasks[0]);
+-    console.debug(topics.length);
+-    console.debug("title" in topics[0]);
+-    if (
+-      (tasks.length > 0 && "taskName" in tasks[0]) ||
+-      (topics.length > 0 && "title" in topics[0])
+-    ) {
+-      return "v0";
+-    } else {
+-      return "v1";
+-    }
+-  };
+-
+-  /*
+-    ///////////
+-    ////// Calculating hash
+-    ///////////////
+-    */
+-  const calculateTaskHash = (tasks) => {
+-    // Strip unimportant stuff
+-    // Topics: folded/unfolded
+-    // Otherwise everything is important?
+-    // The tasks need to be sorted on id
+-    let newTasks = structuredClone(tasks);
+-    newTasks = sanitizeWeekOrderIndex2(newTasks);
+-    let fixedTasks = newTasks
+-      .sort((a, b) => a.id > b.id)
+-      .map((task) => {
+-        return {
+-          name: task.name,
+-          id: task.id,
+-          topics: task.topics.sort(),
+-          completed: task.completed ? true : false,
+-          thisWeek: task.thisWeek ? true : false,
+-          repeated: task.repeated ? true : false,
+-          scheduled: task.scheduled ? true : false,
+-          weekOrderIndex:
+-            task.thisWeek && task.weekOrderIndex > 0 ? task.weekOrderIndex : 0,
+-        };
+-      });
+-    let taskHash = hash(fixedTasks);
+-    console.log(`Calculated hash of tasks: ${taskHash}`);
+-    // The topics need to be sorted on id
+-    return taskHash;
+-  };
+-
+-  const calculateTopicHash = (topics) => {
+-    // Strip unimportant stuff
+-    // Topics: folded/unfolded
+-    // Otherwise everything is important?
+-    // The tasks need to be sorted on id
+-    let newTopics = structuredClone(topics);
+-    const fixTopics = (topicList) => {
+-      let fixedTopicList = topicList
+-        .sort((a, b) => a.id > b.id)
+-        .map((topic) => {
+-          // return a new topic wihtout the unfolded
+-          return {
+-            name: topic.name,
+-            id: topic.id,
+-            subtopics: fixTopics(topic.subtopics),
+-          };
+-        });
+-      return fixedTopicList;
+-    };
+-    let topicHash = hash(fixTopics(newTopics));
+-
+-    console.log(`Calculated hash of topics: ${topicHash}`);
+-    // The topics need to be sorted on id
+-    return topicHash;
+-  };
+-
+-  const calculateHash = (tasks, topics) => {
+-    setTaskHash(calculateTaskHash(tasks));
+-    setTopicHash(calculateTopicHash(topics));
+-  };
+-
+-  /*
+-    /////////////
+-    ///// YAML
+-    ////////////////////
+-    */
+-
+-  const buildYAML_r = (subtopics, tasks, indent_level) => {
+-    let YAMLstr = "";
+-    console.debug(YAMLstr);
+-    // console.log(subtopics)
+-    for (let i = 0; i < subtopics.length; i++) {
+-      // Add topic name as key
+-      let topic = subtopics[i];
+-      if (indent_level == 0) {
+-        // console.log(subtopics)
+-        // console.log('@ indent level 0')
+-        YAMLstr = YAMLstr.concat(
+-          " ".repeat(4 * indent_level),
+-          `'${topic.name}':\n`
+-        );
+-      } else {
+-        YAMLstr = YAMLstr.concat(
+-          " ".repeat(4 * indent_level),
+-          "- ",
+-          `'${topic.name}':\n`
+-        );
+-      }
+-      // Add all tasks in this subtopic to the YAML
+-      let relevant_tasks = tasks.filter((t) => t.topics.includes(topic.id));
+-      for (let j = 0; j < relevant_tasks.length; j++) {
+-        let task = relevant_tasks[j];
+-        YAMLstr = YAMLstr.concat(
+-          " ".repeat(4 * (indent_level + 1)),
+-          `- '${task.name}'\n`
+-        );
+-      }
+-      // Do the same for all the subtopics
+-      // Add
+-      if (topic.subtopics.length > 0) {
+-        YAMLstr = YAMLstr.concat(
+-          buildYAML_r(topic.subtopics, tasks, indent_level + 1)
+-        );
+-      }
+-    }
+-
+-    return YAMLstr;
+-  };
+-
+-  const exportYAML = () => {
+-    // '''
+-    // Export as
+-    // - Topic:
+-    //     - SubTopic:
+-    //         - Task1
+-    //         - Task2
+-    //         - Task3
+-    // '''
+-    // const YAML =
+-    // console.log('Starting Yaml building')
+-    const YAMLcontent = buildYAML_r(topics, tasks, 0);
+-    const blob = new Blob([YAMLcontent], { type: "text/yaml" });
+-    var a = document.createElement("a");
+-    a.href = window.URL.createObjectURL(blob);
+-    if (fileNameRef.current.length > 0) {
+-      console.log(fileNameRef.current);
+-      // a.download = fileInputRef.split(".")[0]
+-      a.download = fileNameRef.current + ".yaml";
+-    } else {
+-      a.download = "tasks_topics.yaml";
+-    }
+-    a.click();
+-  };
+-
+-  const importYAML = (YAMLstr) => {
+-    // Expected:
+-    // - Name: '
+-    console.log("Parsing YAML");
+-    console.info(YAMLstr);
+-    let res = YAML.parse(YAMLstr);
+-    console.info(res);
+-    let importedTasks = [];
+-    let importedTopics = [];
+-    const getFreeImportedTaskKey = () => {
+-      return (
+-        1 +
+-        importedTasks.reduce((max_key, task) => Math.max(max_key, task.key), 0)
+-      );
+-    };
+-    let usedKeys = [0];
+-
+-    const getFreeImportedTopicKey = () => {
+-      let max_id = 1 + Math.max(...usedKeys);
+-      usedKeys = usedKeys.concat(max_id);
+-      // console.log(max_id)
+-      return max_id;
+-    };
+-    const importNewTask = (name, superTopic) => {
+-      // TODO: check if a taskName already exists
+-      // And duplicates will be fused (add topics together)
+-      let newTask = {
+-        taskName: name,
+-        key: getFreeImportedTaskKey(),
+-        topics: [superTopic],
+-        complete: false,
+-      };
+-      importedTasks = importedTasks.concat(newTask);
+-    };
+-    const importNewTopic_r = (node) => {
+-      // Go through all objects in list
+-      // if mapping: is subtopic
+-      // if scalar/item: is tasks
+-      console.debug("New call of import");
+-      console.debug(node);
+-      let newTopics = [];
+-      // let newTopic = {
+-      //     id:getFreeImportedTopicKey(),
+-      //     title:'Hello',
+-      //     unfolded:true,
+-      //     subtopics:[]
+-      // }
+-      // let importedTopics = []
+-      console.debug("Enumerate properties");
+-      for (var key in node) {
+-        let newTopic = {
+-          id: getFreeImportedTopicKey(),
+-          title: "Hello",
+-          unfolded: true,
+-          subtopics: [],
+-        };
+-        let importedTopics = [];
+-        console.debug("Key: ");
+-        console.debug(key);
+-        newTopic.title = key;
+-        let val = node[key];
+-        console.debug("Val:");
+-        console.debug(val);
+-        if (typeof val === "string") {
+-          // Add new tasks
+-          console.debug("New task found head" + val);
+-          importNewTask(val, key);
+-        } else {
+-          if (val instanceof Array) {
+-            // It's an empty task list, ignore
+-            console.debug("List found head");
+-            for (let i = 0; i < val.length; i++) {
+-              let subnode = val[i];
+-              console.debug("Subnode is");
+-              console.debug(subnode);
+-              if (typeof subnode === "string") {
+-                // Add new tasks
+-                console.debug("New task found loop" + subnode);
+-                importNewTask(subnode, key);
+-              } else if (subnode instanceof Array) {
+-                // It's an empty task list, ignore
+-                console.debug("Empty list found  loop");
+-              } else {
+-                // It's an object/subtopic
+-                console.debug(typeof subnode);
+-                console.debug(subnode + "  loop");
+-                importedTopics = importedTopics.concat(
+-                  importNewTopic_r(subnode)
+-                );
+-                console.debug("End recurse loop");
+-              }
+-            }
+-          } else {
+-            // It's an object/subtopic
+-            console.debug(typeof val);
+-            console.debug(val + " head");
+-            importedTopics = importedTopics.concat(importNewTopic_r(val));
+-            console.debug("End recurse head");
+-          }
+-        }
+-        newTopic.subtopics = importedTopics;
+-        console.debug("new topic:");
+-        console.debug(newTopic);
+-
+-        newTopics = newTopics.concat(newTopic);
+-      }
+-      console.debug("new topics/ret_obj:");
+-      console.debug(newTopics);
+-      return newTopics;
+-
+-      // newTopic.subtopics = importedTopics
+-      // console.log(newTopic)
+-      // return newTopic
+-    };
+-    let res2 = importNewTopic_r(res);
+-    console.debug("Result");
+-    console.debug(res2);
+-    console.debug(importedTasks);
+-    // Extract topics?
+-    // Go through the YAML tree
+-
+-    // Extract tasks
+-
+-    setAppData({ topics: res2, tasks: importedTasks });
+-  };
+-
+-  /*
+-    /////////////////////////////////////
+-    //////////// Markdown
+-    ////////////////////////////////////
+-    */
+-
+-  const buildMarkdownRecursive = (subtopics, tasks, indent_level) => {
+-    let MarkdownStr = "";
+-    console.debug(MarkdownStr);
+-    // console.log(subtopics)
+-    for (let i = 0; i < subtopics.length; i++) {
+-      // Add topic name as key
+-      let topic = subtopics[i];
+-      if (indent_level == 0) {
+-        // console.log(subtopics)
+-        // console.log('@ indent level 0')
+-        MarkdownStr = MarkdownStr.concat(
+-          "\n",
+-          "#".repeat(indent_level + 1),
+-          ` ${topic.name}:\n\n`
+-        );
+-      } else {
+-        MarkdownStr = MarkdownStr.concat(
+-          "\n",
+-          "#".repeat(indent_level + 1),
+-          ` ${topic.name}:\n\n`
+-        );
+-      }
+-      // Add all tasks in this subtopic to the Markdown
+-      let relevant_tasks = tasks.filter((t) => t.topics.includes(topic.id));
+-      for (let j = 0; j < relevant_tasks.length; j++) {
+-        let task = relevant_tasks[j];
+-        let completedSymbol = task.completed ? "[x]" : "[ ]";
+-        MarkdownStr = MarkdownStr.concat(`- ${completedSymbol} ${task.name}\n`);
+-      }
+-      // Do the same for all the subtopics
+-      // Add
+-      if (topic.subtopics.length > 0) {
+-        MarkdownStr = MarkdownStr.concat(
+-          buildMarkdownRecursive(topic.subtopics, tasks, indent_level + 1)
+-        );
+-      }
+-    }
+-
+-    return MarkdownStr;
+-  };
+-
+-  const exportMarkdown = () => {
+-    let [new_topics, new_tasks] = [topics, tasks];
+-    const MarkdownContent = buildMarkdownRecursive(topics, tasks, 0);
+-    const blob = new Blob([MarkdownContent], { type: "text/markdown" });
+-    var a = document.createElement("a");
+-    a.href = window.URL.createObjectURL(blob);
+-    if (fileNameRef.current.length > 0) {
+-      console.log(fileNameRef.current);
+-      // a.download = fileInputRef.split(".")[0]
+-      a.download = fileNameRef.current + ".md";
+-    } else {
+-      a.download = "tasks_topics.md";
+-    }
+-    a.click();
+-  };
+-
+-  /*
+-    ///////////////////////////////////
+-    ///////////// JSON
+-    //////////////////////////////////////
+-    */
+-  const exportjson = () => {
+-    let [new_topics, new_tasks] = [topics, tasks];
+-    // Check if v0 format, or v1 format
+-    // if (inputVersion(new_topics, new_tasks) == 'v0') {
+-    //     console.log('Converting internal v0 format to v1');
+-    //     [new_topics, new_tasks] = convert_old_topic_tasks_to_new_topic_tasks(topics, tasks)
+-    // }
+-    // Pretty print json (with 2 spaces as space parameter)
+-    setSavedTaskHash(calculateTaskHash(tasks));
+-    setSavedTopicHash(calculateTopicHash(topics));
+-    setTaskHash(calculateTaskHash(tasks));
+-    setTopicHash(calculateTopicHash(topics));
+-
+-    const jsonContent = JSON.stringify(
+-      { topics: new_topics, tasks: new_tasks },
+-      null,
+-      2
+-    );
+-    const blob = new Blob([jsonContent], { type: "application/json" });
+-    var a = document.createElement("a");
+-    a.href = window.URL.createObjectURL(blob);
+-    if (fileNameRef.current.length > 0) {
+-      console.log(fileNameRef.current);
+-      // a.download = fileInputRef.split(".")[0]
+-      a.download = fileNameRef.current + ".json";
+-    } else {
+-      a.download = "tasks_topics.json";
+-    }
+-    a.click();
+-  };
+-
+-  // console.log(tasks[0].topics.includes(topics[0].title))
+-  const importjson = (jsonStr) => {
+-    const uploadedData = JSON.parse(jsonStr);
+-    // As loaded (may be new format, may be old format)
+-    // setTopics(uploadedData.topics);
+-    // setTasks(uploadedData.tasks);
+-    let [old_topics, old_tasks] = [uploadedData.topics, uploadedData.tasks];
+-    // Sanitize input
+-
+-    // Version rectification
+-    let version = inputVersion(old_tasks, old_topics);
+-    console.log("Version of input is " + version.toString());
+-    if (version == "v0") {
+-      console.log("converting imported v0 to v1 format");
+-      [old_topics, old_tasks] = convert_old_topic_tasks_to_new_topic_tasks(
+-        uploadedData.topics,
+-        uploadedData.tasks
+-      );
+-    }
+-    let newTaskHash = calculateTaskHash(tasks);
+-    let newTopicHash = calculateTopicHash(topics);
+-    setTaskHash(newTaskHash);
+-    setTopicHash(newTopicHash);
+-    setLoadedTaskHash(newTaskHash);
+-    setLoadedTopicHash(newTopicHash);
+-    setSavedTaskHash(null);
+-    setSavedTopicHash(null);
+-    setAppData({ topics: old_topics, tasks: old_tasks });
+-    console.log("Loading etc");
+-
+-    return "succesful import";
+-  };
+-  // const [file,setFile] = useState(null);
+-
+-  const handleFileToUpload = (e) => {
+-    console.log("upload start");
+-    if (e.target.files) {
+-      // setFile(e.target.files[0]);
+-      var file = e.target.files[0];
+-    }
+-    console.log("file?");
+-    console.log();
+-    if (file) {
+-      fileNameRef.current = file.name.substring(0, file.name.lastIndexOf("."));
+-      fileNameRefComplete.current = file.name;
+-      console.log(fileNameRef.current);
+-      const reader = new FileReader();
+-      reader.onload = (evt) => {
+-        console.log("file loaded now parsing");
+-        console.log(file.type);
+-        if (file.type == "application/json") {
+-          try {
+-            console.info(importjson(evt.target.result));
+-          } catch (e) {
+-            console.error("Uploaded file is not JSON enough.", e);
+-          }
+-        } else if (file.name.split(".").at(-1) == "yaml") {
+-          try {
+-            console.log(importYAML(evt.target.result));
+-          } catch (e) {
+-            console.error("Uploaded file is not YAML enough.", e);
+-          }
+-        } else {
+-          console.warning("File Type not recognized");
+-          console.warning(file.name.split(".").at(-1));
+-        }
+-      };
+-      console.log("start reading");
+-
+-      reader.readAsText(file);
+-    }
+-  };
+-
+-  const getFilename = (extension) => {
+-    if (fileNameRef.current.length > 0) {
+-      console.log(fileNameRef.current);
+-      return fileNameRef.current + extension;
+-    } else {
+-      return "tasks_topics" + extension;
+-    }
+-  };
+-  const exportAll = () => {
+-    console.log("Test");
+-
+-    let [new_topics, new_tasks] = [topics, tasks];
+-    // Check if v0 format, or v1 format
+-    // if (inputVersion(new_topics, new_tasks) == 'v0') {
+-    //     console.log('Converting internal v0 format to v1');
+-    //     [new_topics, new_tasks] = convert_old_topic_tasks_to_new_topic_tasks(topics, tasks)
+-    // }
+-    // Pretty print json (with 2 spaces as space parameter)
+-    setSavedTaskHash(calculateTaskHash(tasks));
+-    setSavedTopicHash(calculateTopicHash(topics));
+-    setTaskHash(calculateTaskHash(tasks));
+-    setTopicHash(calculateTopicHash(topics));
+-
+-    const jsonContent = JSON.stringify(
+-      { topics: new_topics, tasks: new_tasks },
+-      null,
+-      2
+-    );
+-    const jsonBlob = new Blob([jsonContent], { type: "application/json" });
+-    const MarkdownContent = buildMarkdownRecursive(topics, tasks, 0);
+-    const markdownBlob = new Blob([MarkdownContent], { type: "text/markdown" });
+-    // const YAMLcontent = buildYAML_r(topics, tasks, 0)
+-    // const yamlBlob = new Blob([YAMLcontent], { type: "text/yaml" });
+-    // const blobs = [jsonBlob, markdownBlob, yamlBlob]
+-    // const extensions = ['.json', '.md', '.yaml']
+-    const blobs = [jsonBlob, markdownBlob];
+-    const extensions = [".json", ".md"];
+-    var a = document.createElement("a");
+-    a.setAttribute("download", null);
+-    a.style.display = "none";
+-    document.body.appendChild(a);
+-    for (var i = 0; i < blobs.length; i++) {
+-      a.download = getFilename(extensions[i]);
+-      a.href = URL.createObjectURL(blobs[i]);
+-      a.click();
+-    }
+-    document.body.removeChild(a);
+-  };
+-
+-  if (taskHash == null) {
+-    setTaskHash(calculateTaskHash(tasks));
+-    setTopicHash(calculateTopicHash(topics));
+-  }
+-
+-  let mutatedSinceLoad = false;
+-  let mutatedSinceSave = false;
+-  if (
+-    (loadedTaskHash && taskHash !== loadedTaskHash) ||
+-    (loadedTopicHash && topicHash !== loadedTopicHash)
+-  ) {
+-    mutatedSinceLoad = true;
+-  }
+-  // Check only if the file has been saved before
+-  if (
+-    savedTaskHash &&
+-    taskHash !== savedTaskHash &&
+-    savedTopicHash &&
+-    topicHash !== savedTopicHash
+-  ) {
+-    mutatedSinceSave = true;
+-  }
+-
+-  const isChanged = (taskHash, topicHash) => {
+-    let mutatedSinceLoad = false;
+-    let mutatedSinceSave = false;
+-    if (
+-      (loadedTaskHash && taskHash !== loadedTaskHash) ||
+-      (loadedTopicHash && topicHash !== loadedTopicHash)
+-    ) {
+-      mutatedSinceLoad = true;
+-    }
+-    // Check only if the file has been saved before
+-    if (
+-      savedTaskHash &&
+-      taskHash !== savedTaskHash &&
+-      savedTopicHash &&
+-      topicHash !== savedTopicHash
+-    ) {
+-      mutatedSinceSave = true;
+-    }
+-    console.log("Mutated since load and save");
+-    console.log(mutatedSinceLoad);
+-    console.log(mutatedSinceSave);
+-    console.log(savedTaskHash);
+-    console.log(savedTopicHash);
+-    console.log(loadedTaskHash);
+-    console.log(loadedTopicHash);
+-    console.log(taskHash);
+-    console.log(topicHash);
+-
+-    if (!savedTaskHash && mutatedSinceLoad) {
+-      return true;
+-    } else if (savedTaskHash && mutatedSinceSave) {
+-      return true;
+-    } else {
+-      return false;
+-    }
+-  };
+-
+-  let hasChanges = isChanged(
+-    loadedTaskHash,
+-    taskHash,
+-    loadedTopicHash,
+-    topicHash,
+-    savedTaskHash,
+-    savedTopicHash
+-  );
+-  if (!hasUnsavedChanges && hasChanges) {
+-    setHasUnsavedChanges(true);
+-  } else if (hasUnsavedChanges && !hasChanges) {
+-    setHasUnsavedChanges(false);
+-  }
+-
+-  const handleBrowseClick = () => {
+-    // Trigger the file input click
+-    fileInputRef.current.click();
+-  };
+-
+-  useEffect(() => {
+-    const handleBeforeUnload = (event) => {
+-      console.log("beforeunload");
+-      console.log("Mutated since load and save");
+-      console.log(savedTaskHash);
+-      console.log(savedTopicHash);
+-      console.log(loadedTaskHash);
+-      console.log(loadedTopicHash);
+-      console.log(taskHash, topicHash);
+-      let newTaskHash = calculateTaskHash(tasks);
+-      let newTopicHash = calculateTopicHash(topics);
+-      console.log("Recaclucalted");
+-      console.log(newTaskHash, newTopicHash);
+-      let hasChanges = isChanged(newTaskHash, newTopicHash);
+-      console.log(hasChanges);
+-      if (hasChanges) {
+-        console.log("Changes");
+-        const message =
+-          "You have unsaved changes. Are you sure you want to leave?";
+-        event.returnValue = message;
+-        return message;
+-      } else {
+-        console.log("No changes?");
+-        const message = "The checking didn't work";
+-        event.returnValue = message;
+-        return message;
+-      }
+-    };
+-    console.log("adding listener");
+-    window.addEventListener("beforeunload", handleBeforeUnload);
+-
+-    return () => {
+-      window.removeEventListener("beforeunload", handleBeforeUnload);
+-    };
+-  }, []);
+-
+-  return (
+-    <div className="importExport">
+-      <button onClick={exportjson}>Save as JSON</button>
+-      <br />
+-      {savedTaskHash
+-        ? mutatedSinceSave
+-          ? "Unsaved changes"
+-          : "Unchanged"
+-        : "Not saved yet"}
+-
+-      {/* <button onClick={exportYAML}>Export as YAML</button> */}
+-      <button onClick={exportMarkdown}> Export as Markdown</button>
+-      <br />
+-      <button onClick={exportAll}> Export All [JSON+Markdown]</button>
+-      <br />
+-      <button onClick={() => calculateHash(tasks, topics)}> Calc Hash </button>
+-      <br />
+-      <input
+-        type="file"
+-        ref={fileInputRef}
+-        style={{ display: "none" }}
+-        onChange={handleFileToUpload}
+-      />
+-      <button onClick={handleBrowseClick}>Load file</button>
+-      <br />
+-      <input type="text" value={fileNameRefComplete.current} readOnly />
+-      <br />
+-      {loadedTaskHash
+-        ? mutatedSinceLoad
+-          ? "Changed since load"
+-          : "Unchanged since load"
+-        : "Nothing loaded yet"}
+-    </div>
+-  );
+-};
+-
+-export default ImportExport;
+diff --git a/src/ImportExport/DataMutationChecks.ts b/src/ImportExport/DataMutationChecks.ts
+new file mode 100644
+index 0000000..967c5db
+--- /dev/null
++++ b/src/ImportExport/DataMutationChecks.ts
+@@ -0,0 +1,132 @@
++import structuredClone from "@ungap/structured-clone";
++import { sanitizeWeekOrderIndex2 } from "../ADG/ModifyFuncGeneratorsV1.ts";
++var hash = require("object-hash");
++
++/*
++    ///////////
++    ////// Calculating hash
++    ///////////////
++    */
++export const calculateTaskHash = (tasks) => {
++  // Strip unimportant stuff
++  // Topics: folded/unfolded
++  // Otherwise everything is important?
++  // The tasks need to be sorted on id
++  let newTasks = structuredClone(tasks);
++  newTasks = sanitizeWeekOrderIndex2(newTasks);
++  let fixedTasks = newTasks
++    .sort((a, b) => a.id > b.id)
++    .map((task) => {
++      return {
++        name: task.name,
++        id: task.id,
++        topics: task.topics.sort(),
++        completed: task.completed ? true : false,
++        thisWeek: task.thisWeek ? true : false,
++        repeated: task.repeated ? true : false,
++        scheduled: task.scheduled ? true : false,
++        weekOrderIndex:
++          task.thisWeek && task.weekOrderIndex > 0 ? task.weekOrderIndex : 0,
++      };
++    });
++  let taskHash = hash(fixedTasks);
++  console.log(`Calculated hash of tasks: ${taskHash}`);
++  // The topics need to be sorted on id
++  return taskHash;
++};
++
++export const calculateTopicHash = (topics) => {
++  // Strip unimportant stuff
++  // Topics: folded/unfolded
++  // Otherwise everything is important?
++  // The tasks need to be sorted on id
++  let newTopics = structuredClone(topics);
++  const fixTopics = (topicList) => {
++    let fixedTopicList = topicList
++      .sort((a, b) => a.id > b.id)
++      .map((topic) => {
++        // return a new topic wihtout the unfolded
++        return {
++          name: topic.name,
++          id: topic.id,
++          subtopics: fixTopics(topic.subtopics),
++        };
++      });
++    return fixedTopicList;
++  };
++  let topicHash = hash(fixTopics(newTopics));
++
++  console.log(`Calculated hash of topics: ${topicHash}`);
++  // The topics need to be sorted on id
++  return topicHash;
++};
++
++export const calculateHash = (tasks, topics) => {
++  return {
++    taskHash: calculateTaskHash(tasks),
++    topicHash: calculateTopicHash(topics),
++  };
++};
++
++export const mutatedSince = (
++  taskHash,
++  topicHash,
++  loadedTaskHash,
++  loadedTopicHash,
++  savedTaskHash,
++  savedTopicHash
++) => {
++  let mutatedSinceLoad = false;
++  let mutatedSinceSave = false;
++  if (
++    (loadedTaskHash && taskHash !== loadedTaskHash) ||
++    (loadedTopicHash && topicHash !== loadedTopicHash)
++  ) {
++    mutatedSinceLoad = true;
++  }
++  // Check only if the file has been saved before
++  if (
++    savedTaskHash &&
++    taskHash !== savedTaskHash &&
++    savedTopicHash &&
++    topicHash !== savedTopicHash
++  ) {
++    mutatedSinceSave = true;
++  }
++  return { mutatedSinceLoad, mutatedSinceSave };
++};
++
++export const isChanged = (
++  taskHash,
++  topicHash,
++  loadedTaskHash,
++  loadedTopicHash,
++  savedTaskHash,
++  savedTopicHash
++) => {
++  let { mutatedSinceLoad, mutatedSinceSave } = mutatedSince(
++    taskHash,
++    topicHash,
++    loadedTaskHash,
++    loadedTopicHash,
++    savedTaskHash,
++    savedTopicHash
++  );
++  console.log("Mutated since load and save");
++  console.log(mutatedSinceLoad);
++  console.log(mutatedSinceSave);
++  console.log(savedTaskHash);
++  console.log(savedTopicHash);
++  console.log(loadedTaskHash);
++  console.log(loadedTopicHash);
++  console.log(taskHash);
++  console.log(topicHash);
++
++  if (!savedTaskHash && mutatedSinceLoad) {
++    return true;
++  } else if (savedTaskHash && mutatedSinceSave) {
++    return true;
++  } else {
++    return false;
++  }
++};
+diff --git a/src/ImportExport/FormatAsMarkdown.ts b/src/ImportExport/FormatAsMarkdown.ts
+new file mode 100644
+index 0000000..c7d3a50
+--- /dev/null
++++ b/src/ImportExport/FormatAsMarkdown.ts
+@@ -0,0 +1,53 @@
++/*
++/////////////////////////////////////
++//////////// Markdown
++////////////////////////////////////
++*/
++
++import { saveFile } from "./LoadFile.ts";
++
++export const buildMarkdownRecursive = (subtopics, tasks, indent_level) => {
++  let MarkdownStr = "";
++  console.debug(MarkdownStr);
++  // console.log(subtopics)
++  for (let i = 0; i < subtopics.length; i++) {
++    // Add topic name as key
++    let topic = subtopics[i];
++    if (indent_level == 0) {
++      // console.log(subtopics)
++      // console.log('@ indent level 0')
++      MarkdownStr = MarkdownStr.concat(
++        "\n",
++        "#".repeat(indent_level + 1),
++        ` ${topic.name}:\n\n`
++      );
++    } else {
++      MarkdownStr = MarkdownStr.concat(
++        "\n",
++        "#".repeat(indent_level + 1),
++        ` ${topic.name}:\n\n`
++      );
++    }
++    // Add all tasks in this subtopic to the Markdown
++    let relevant_tasks = tasks.filter((t) => t.topics.includes(topic.id));
++    for (let j = 0; j < relevant_tasks.length; j++) {
++      let task = relevant_tasks[j];
++      let completedSymbol = task.completed ? "[x]" : "[ ]";
++      MarkdownStr = MarkdownStr.concat(`- ${completedSymbol} ${task.name}\n`);
++    }
++    // Do the same for all the subtopics
++    // Add
++    if (topic.subtopics.length > 0) {
++      MarkdownStr = MarkdownStr.concat(
++        buildMarkdownRecursive(topic.subtopics, tasks, indent_level + 1)
++      );
++    }
++  }
++
++  return MarkdownStr;
++};
++
++export const exportMarkdown = (topics, tasks, fileNameRef) => {
++  const MarkdownContent = buildMarkdownRecursive(topics, tasks, 0);
++  saveFile(MarkdownContent, "text/markdown", fileNameRef.current, ".md");
++};
+diff --git a/src/ImportExport/FormatAsYAML.ts b/src/ImportExport/FormatAsYAML.ts
+new file mode 100644
+index 0000000..3e0108c
+--- /dev/null
++++ b/src/ImportExport/FormatAsYAML.ts
+@@ -0,0 +1,64 @@
++import { saveFile } from "./LoadFile.ts";
++
++export const buildYAML_r = (subtopics, tasks, indent_level) => {
++  // '''
++  // Export as
++  // - Topic:
++  //     - SubTopic:
++  //         - Task1
++  //         - Task2
++  //         - Task3
++  // '''
++  let YAMLstr = "";
++  console.debug(YAMLstr);
++  // console.log(subtopics)
++  for (let i = 0; i < subtopics.length; i++) {
++    // Add topic name as key
++    let topic = subtopics[i];
++    if (indent_level == 0) {
++      // console.log(subtopics)
++      // console.log('@ indent level 0')
++      YAMLstr = YAMLstr.concat(
++        " ".repeat(4 * indent_level),
++        `'${topic.name}':\n`
++      );
++    } else {
++      YAMLstr = YAMLstr.concat(
++        " ".repeat(4 * indent_level),
++        "- ",
++        `'${topic.name}':\n`
++      );
++    }
++    // Add all tasks in this subtopic to the YAML
++    let relevant_tasks = tasks.filter((t) => t.topics.includes(topic.id));
++    for (let j = 0; j < relevant_tasks.length; j++) {
++      let task = relevant_tasks[j];
++      YAMLstr = YAMLstr.concat(
++        " ".repeat(4 * (indent_level + 1)),
++        `- '${task.name}'\n`
++      );
++    }
++    // Do the same for all the subtopics
++    // Add
++    if (topic.subtopics.length > 0) {
++      YAMLstr = YAMLstr.concat(
++        buildYAML_r(topic.subtopics, tasks, indent_level + 1)
++      );
++    }
++  }
++
++  return YAMLstr;
++};
++
++export const exportYAML = (topics, tasks, fileNameRef) => {
++  // '''
++  // Export as
++  // - Topic:
++  //     - SubTopic:
++  //         - Task1
++  //         - Task2
++  //         - Task3
++  // '''
++  const YAMLcontent = buildYAML_r(topics, tasks, 0);
++  saveFile(YAMLcontent, "text/yaml", fileNameRef.current, ".yaml");
++};
+diff --git a/src/ImportExport/ImportExport.tsx b/src/ImportExport/ImportExport.tsx
+new file mode 100644
+index 0000000..8da1269
+--- /dev/null
++++ b/src/ImportExport/ImportExport.tsx
+@@ -0,0 +1,300 @@
++import { useState, useRef, useEffect } from "react";
++import {
++  calculateHash,
++  calculateTaskHash,
++  calculateTopicHash,
++  isChanged,
++  mutatedSince,
++} from "./DataMutationChecks.ts";
++import { exportYAML } from "./FormatAsYAML.ts";
++import { buildMarkdownRecursive, exportMarkdown } from "./FormatAsMarkdown.ts";
++import { parseJSON } from "./ParseJSON.ts";
++import { parseYAML } from "./ParseYAML.ts";
++import { exportJSON } from "./SaveAsJSON.ts";
++import {
++  getVersionOfAppData,
++  Version,
++  versionToString,
++} from "./VersionDeterminer.ts";
++
++const ImportExport = (props) => {
++  console.debug("Rendering ImportExport");
++  const { appData, setAppData, preferredVersion } = props;
++  // This value will be used to determine the version of the exported data
++  let curPreferredVersion =
++    preferredVersion === undefined ? Version.V1 : preferredVersion;
++  let curVersion = getVersionOfAppData(appData);
++  console.log("Current version is " + versionToString(curVersion));
++  console.log("Preferred version is " + versionToString(curPreferredVersion));
++  const { topics, tasks } = appData;
++  const [taskHash, setTaskHash] = useState(null);
++  const [topicHash, setTopicHash] = useState(null);
++  const [loadedTaskHash, setLoadedTaskHash] = useState(null);
++  const [loadedTopicHash, setLoadedTopicHash] = useState(null);
++  const [savedTaskHash, setSavedTaskHash] = useState(null);
++  const [savedTopicHash, setSavedTopicHash] = useState(null);
++  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
++
++  const fileInputRef = useRef(null); // reference to the file input element
++  const fileNameRef = useRef(""); // filename without extension (after the last "." it's removed)
++  const fileNameRefComplete = useRef(""); // complete file name
++
++  const handleExportYAMLClick = () => {
++    exportYAML(topics, tasks, fileNameRef);
++  };
++
++  const handleExportMarkdownClick = () => {
++    exportMarkdown(topics, tasks, fileNameRef);
++  };
++
++  const handleSaveAsJSONClick = () => {
++    setSavedTaskHash(calculateTaskHash(tasks));
++    setSavedTopicHash(calculateTopicHash(topics));
++    setTaskHash(calculateTaskHash(tasks));
++    setTopicHash(calculateTopicHash(topics));
++    exportJSON(topics, tasks, fileNameRef);
++  };
++
++  const importjson = (jsonStr) => {
++    const { old_topics: topics, old_tasks: tasks } = parseJSON(jsonStr);
++    let newTaskHash = calculateTaskHash(tasks);
++    let newTopicHash = calculateTopicHash(topics);
++    setTaskHash(newTaskHash);
++    setTopicHash(newTopicHash);
++    setLoadedTaskHash(newTaskHash);
++    setLoadedTopicHash(newTopicHash);
++    setSavedTaskHash(null);
++    setSavedTopicHash(null);
++    setAppData({ topics: topics, tasks: tasks });
++    console.log("Loading etc");
++    return "succesful import";
++  };
++
++  const parseFile = (fileContent, fileType, fileName) => {
++    console.log("file loaded now parsing");
++    console.log(fileType);
++    if (fileType == "application/json") {
++      // JSON
++      try {
++        console.info(importjson(fileContent));
++      } catch (e) {
++        console.error("Uploaded file is not JSON enough.", e);
++      }
++    } else if (fileName.split(".").at(-1) == "yaml") {
++      // YAML
++      try {
++        const YAMLstr = fileContent;
++        const { parsedTopics, parsedTasks } = parseYAML(YAMLstr);
++        console.log("Parsed tasks,topics from YAML");
++        console.log(parsedTopics);
++        console.log(parsedTasks);
++        setAppData({ topics: parsedTopics, tasks: parsedTasks });
++      } catch (e) {
++        console.error("Uploaded file is not YAML enough.", e);
++      }
++    } else {
++      // OTHER
++      console.warn("File Type not recognized");
++      console.warn(fileName.split(".").at(-1));
++    }
++  };
++
++  const handleFileToUpload = (e) => {
++    console.log("upload start");
++    if (e.target.files) {
++      var file = e.target.files[0];
++    }
++    if (file) {
++      console.log(`Loading file / name ${file.name} / type ${file.type}.`);
++      fileNameRef.current = file.name.substring(0, file.name.lastIndexOf("."));
++      fileNameRefComplete.current = file.name;
++
++      const reader = new FileReader();
++      reader.onload = (evt) => {
++        if (!evt.target) {
++          console.error("File reader didn't load");
++          return;
++        } else if (evt.target.result == null) {
++          console.error("File reader has empty contents");
++          return;
++        }
++        parseFile(evt.target.result, file.type, file.name);
++      };
++      console.log("start reading");
++
++      reader.readAsText(file); // This runs onload
++    }
++  };
++
++  const getFilename = (extension) => {
++    if (fileNameRef.current.length > 0) {
++      console.log(fileNameRef.current);
++      return fileNameRef.current + extension;
++    } else {
++      return "tasks_topics" + extension;
++    }
++  };
++
++  const exportAll = () => {
++    console.log("Test");
++
++    let [new_topics, new_tasks] = [topics, tasks];
++    // Check if v0 format, or v1 format
++    // if (inputVersion(new_topics, new_tasks) == 'v0') {
++    //     console.log('Converting internal v0 format to v1');
++    //     [new_topics, new_tasks] = convert_old_topic_tasks_to_new_topic_tasks(topics, tasks)
++    // }
++    // Pretty print json (with 2 spaces as space parameter)
++
++    setSavedTaskHash(calculateTaskHash(tasks));
++    setSavedTopicHash(calculateTopicHash(topics));
++    setTaskHash(calculateTaskHash(tasks));
++    setTopicHash(calculateTopicHash(topics));
++
++    const jsonContent = JSON.stringify(
++      { topics: new_topics, tasks: new_tasks },
++      null,
++      2
++    );
++    const jsonBlob = new Blob([jsonContent], { type: "application/json" });
++    const MarkdownContent = buildMarkdownRecursive(topics, tasks, 0);
++    const markdownBlob = new Blob([MarkdownContent], { type: "text/markdown" });
++    // const YAMLcontent = buildYAML_r(topics, tasks, 0)
++    // const yamlBlob = new Blob([YAMLcontent], { type: "text/yaml" });
++    // const blobs = [jsonBlob, markdownBlob, yamlBlob]
++    // const extensions = ['.json', '.md', '.yaml']
++    const blobs = [jsonBlob, markdownBlob];
++    const extensions = [".json", ".md"];
++    var a = document.createElement("a");
++    a.setAttribute("download", null);
++    a.style.display = "none";
++    document.body.appendChild(a);
++    for (var i = 0; i < blobs.length; i++) {
++      a.download = getFilename(extensions[i]);
++      a.href = URL.createObjectURL(blobs[i]);
++      a.click();
++    }
++    document.body.removeChild(a);
++  };
++
++  if (taskHash == null) {
++    setTaskHash(calculateTaskHash(tasks));
++    setTopicHash(calculateTopicHash(topics));
++  }
++
++  let hasChanges = isChanged(
++    taskHash,
++    topicHash,
++    loadedTaskHash,
++    loadedTopicHash,
++    savedTaskHash,
++    savedTopicHash
++  );
++  if (!hasUnsavedChanges && hasChanges) {
++    setHasUnsavedChanges(true);
++  } else if (hasUnsavedChanges && !hasChanges) {
++    setHasUnsavedChanges(false);
++  }
++
++  useEffect(() => {
++    const handleBeforeUnload = (event) => {
++      console.log("beforeunload");
++      console.log("Mutated since load and save");
++      console.log(savedTaskHash);
++      console.log(savedTopicHash);
++      console.log(loadedTaskHash);
++      console.log(loadedTopicHash);
++      console.log(taskHash, topicHash);
++      let newTaskHash = calculateTaskHash(tasks);
++      let newTopicHash = calculateTopicHash(topics);
++      console.log("Recaclculated");
++      console.log(newTaskHash, newTopicHash);
++      let hasChanges = isChanged(
++        newTaskHash,
++        newTopicHash,
++        loadedTaskHash,
++        loadedTopicHash,
++        savedTaskHash,
++        savedTopicHash
++      );
++      console.log(hasChanges);
++      if (hasChanges) {
++        console.log("Changes");
++        const message =
++          "You have unsaved changes. Are you sure you want to leave?";
++        event.returnValue = message;
++        return message;
++      } else {
++        console.log("No changes?");
++        const message = "The checking didn't work";
++        event.returnValue = message;
++        return message;
++      }
++    };
++    console.log("adding listener");
++    window.addEventListener("beforeunload", handleBeforeUnload);
++
++    return () => {
++      window.removeEventListener("beforeunload", handleBeforeUnload);
++    };
++  }, []);
++
++  const handleBrowseClick = () => {
++    // The browse button is visible, and the file input is hidden
++    // So we need to trigger the file input click ourselves
++    fileInputRef.current.click();
++  };
++  const { mutatedSinceLoad, mutatedSinceSave } = mutatedSince(
++    taskHash,
++    topicHash,
++    loadedTaskHash,
++    loadedTopicHash,
++    savedTaskHash,
++    savedTopicHash
++  );
++  return (
++    <div className="importExport">
++      <button onClick={handleSaveAsJSONClick}>Save as JSON</button>
++      <br />
++      {savedTaskHash
++        ? mutatedSinceSave
++          ? "Unsaved changes"
++          : "Unchanged"
++        : "Not saved yet"}
++
++      {/* <button onClick={handleExportYAMLClick}>Export as YAML</button> */}
++      <button onClick={handleExportMarkdownClick}> Export as Markdown</button>
++      <br />
++      <button onClick={exportAll}> Export All [JSON+Markdown]</button>
++      <br />
++      <button
++        onClick={() => {
++          const { taskHash, topicHash } = calculateHash(tasks, topics);
++          setTaskHash(taskHash);
++          setTopicHash(topicHash);
++        }}
++      >
++        {" "}
++        Calc Hash{" "}
++      </button>
++      <br />
++      <input
++        type="file"
++        ref={fileInputRef}
++        style={{ display: "none" }}
++        onChange={handleFileToUpload}
++      />
++      <button onClick={handleBrowseClick}>Load file</button>
++      <br />
++      <input type="text" value={fileNameRefComplete.current} readOnly />
++      <br />
++      {loadedTaskHash
++        ? mutatedSinceLoad
++          ? "Changed since load"
++          : "Unchanged since load"
++        : "Nothing loaded yet"}
++    </div>
++  );
++};
++
++export default ImportExport;
+diff --git a/src/ImportExport/LoadFile.ts b/src/ImportExport/LoadFile.ts
+new file mode 100644
+index 0000000..c074813
+--- /dev/null
++++ b/src/ImportExport/LoadFile.ts
+@@ -0,0 +1,15 @@
++const loadFile = (file, fileType, fileName) => {};
++
++export const saveFile = (fileContents, fileType, fileName, fileExtension) => {
++  const blob = new Blob([fileContents], { type: fileType });
++  var a = document.createElement("a");
++  a.href = window.URL.createObjectURL(blob);
++  if (fileName.length > 0) {
++    console.log(fileName);
++    // a.download = fileInputRef.split(".")[0]
++    a.download = fileName + fileExtension;
++  } else {
++    a.download = "tasks_topics" + fileExtension;
++  }
++  a.click();
++};
+diff --git a/src/ImportExport/ParseJSON.ts b/src/ImportExport/ParseJSON.ts
+new file mode 100644
+index 0000000..db1d714
+--- /dev/null
++++ b/src/ImportExport/ParseJSON.ts
+@@ -0,0 +1,30 @@
++import {
++  convert_v1_to_v0,
++  convert_v0_to_v1,
++} from "../Converters/Migration_V0_V1/UpdateV0ToV1.ts";
++import {
++  checkVersionV0orV1,
++  Version,
++  versionToString,
++} from "./VersionDeterminer.ts";
++
++export const parseJSON = (jsonStr) => {
++  const uploadedData = JSON.parse(jsonStr);
++  // As loaded (may be new format, may be old format)
++  // setTopics(uploadedData.topics);
++  // setTasks(uploadedData.tasks);
++  let [old_topics, old_tasks] = [uploadedData.topics, uploadedData.tasks];
++  // Sanitize input
++
++  // Version rectification
++  let version = checkVersionV0orV1(old_tasks, old_topics);
++  console.log("Version of input is " + versionToString(version));
++  if (version === Version.V0) {
++    console.log("converting imported v0 to v1 format");
++    [old_topics, old_tasks] = convert_v0_to_v1(
++      uploadedData.topics,
++      uploadedData.tasks
++    );
++  }
++  return { old_topics, old_tasks };
++};
+diff --git a/src/ImportExport/ParseYAML.ts b/src/ImportExport/ParseYAML.ts
+new file mode 100644
+index 0000000..4d8f07b
+--- /dev/null
++++ b/src/ImportExport/ParseYAML.ts
+@@ -0,0 +1,122 @@
++import YAML from "yaml";
++export const parseYAML = (YAMLstr: string) => {
++  // Expected:
++  // - Name: '
++  console.log("Parsing YAML");
++  console.info(YAMLstr);
++  let res = YAML.parse(YAMLstr);
++  console.info(res);
++  let parsedTasks = [];
++  let importedTopics = [];
++  const getFreeImportedTaskKey = () => {
++    return (
++      1 + parsedTasks.reduce((max_key, task) => Math.max(max_key, task.key), 0)
++    );
++  };
++  let usedKeys = [0];
++
++  const getFreeImportedTopicKey = () => {
++    let max_id = 1 + Math.max(...usedKeys);
++    usedKeys = usedKeys.concat(max_id);
++    // console.log(max_id)
++    return max_id;
++  };
++  const importNewTask = (name, superTopic) => {
++    // TODO: check if a taskName already exists
++    // And duplicates will be fused (add topics together)
++    let newTask = {
++      taskName: name,
++      key: getFreeImportedTaskKey(),
++      topics: [superTopic],
++      complete: false,
++    };
++    parsedTasks = parsedTasks.concat(newTask);
++  };
++  const importNewTopic_r = (node) => {
++    // Go through all objects in list
++    // if mapping: is subtopic
++    // if scalar/item: is tasks
++    console.debug("New call of import");
++    console.debug(node);
++    let newTopics = [];
++    // let newTopic = {
++    //     id:getFreeImportedTopicKey(),
++    //     title:'Hello',
++    //     unfolded:true,
++    //     subtopics:[]
++    // }
++    // let importedTopics = []
++    console.debug("Enumerate properties");
++    for (var key in node) {
++      let newTopic = {
++        id: getFreeImportedTopicKey(),
++        title: "Hello",
++        unfolded: true,
++        subtopics: [],
++      };
++      let importedTopics = [];
++      console.debug("Key: ");
++      console.debug(key);
++      newTopic.title = key;
++      let val = node[key];
++      console.debug("Val:");
++      console.debug(val);
++      if (typeof val === "string") {
++        // Add new tasks
++        console.debug("New task found head" + val);
++        importNewTask(val, key);
++      } else {
++        if (val instanceof Array) {
++          // It's an empty task list, ignore
++          console.debug("List found head");
++          for (let i = 0; i < val.length; i++) {
++            let subnode = val[i];
++            console.debug("Subnode is");
++            console.debug(subnode);
++            if (typeof subnode === "string") {
++              // Add new tasks
++              console.debug("New task found loop" + subnode);
++              importNewTask(subnode, key);
++            } else if (subnode instanceof Array) {
++              // It's an empty task list, ignore
++              console.debug("Empty list found  loop");
++            } else {
++              // It's an object/subtopic
++              console.debug(typeof subnode);
++              console.debug(subnode + "  loop");
++              importedTopics = importedTopics.concat(importNewTopic_r(subnode));
++              console.debug("End recurse loop");
++            }
++          }
++        } else {
++          // It's an object/subtopic
++          console.debug(typeof val);
++          console.debug(val + " head");
++          importedTopics = importedTopics.concat(importNewTopic_r(val));
++          console.debug("End recurse head");
++        }
++      }
++      newTopic.subtopics = importedTopics;
++      console.debug("new topic:");
++      console.debug(newTopic);
++
++      newTopics = newTopics.concat(newTopic);
++    }
++    console.debug("new topics/ret_obj:");
++    console.debug(newTopics);
++    return newTopics;
++
++    // newTopic.subtopics = importedTopics
++    // console.log(newTopic)
++    // return newTopic
++  };
++  let parsedTopics = importNewTopic_r(res);
++  console.debug("Result");
++  console.debug(parsedTopics);
++  console.debug(parsedTasks);
++  // Extract topics?
++  // Go through the YAML tree
++
++  // Extract tasks
++  return { parsedTopics, parsedTasks };
++};
+diff --git a/src/ImportExport/SaveAsJSON.ts b/src/ImportExport/SaveAsJSON.ts
+new file mode 100644
+index 0000000..accf45b
+--- /dev/null
++++ b/src/ImportExport/SaveAsJSON.ts
+@@ -0,0 +1,18 @@
++import { saveFile } from "./LoadFile.ts";
++
++export const exportJSON = (topics, tasks, fileNameRef) => {
++  let [new_topics, new_tasks] = [topics, tasks];
++  // Check if v0 format, or v1 format
++  // if (inputVersion(new_topics, new_tasks) == 'v0') {
++  //     console.log('Converting internal v0 format to v1');
++  //     [new_topics, new_tasks] = convert_old_topic_tasks_to_new_topic_tasks(topics, tasks)
++  // }
++  // Pretty print json (with 2 spaces as space parameter)
++
++  const jsonContent = JSON.stringify(
++    { topics: new_topics, tasks: new_tasks },
++    null,
++    2
++  );
++  saveFile(jsonContent, "application/json", fileNameRef.current, ".json");
++};
+diff --git a/src/ImportExport/VersionDeterminer.ts b/src/ImportExport/VersionDeterminer.ts
+new file mode 100644
+index 0000000..d9c7887
+--- /dev/null
++++ b/src/ImportExport/VersionDeterminer.ts
+@@ -0,0 +1,53 @@
++export enum Version {
++  UNKNOWN,
++  V0,
++  V1,
++  V2,
++}
++
++export const versionToString = (version: Version): string => {
++  switch (version) {
++    case Version.V0:
++      return "v0";
++    case Version.V1:
++      return "v1";
++    case Version.V2:
++      return "v2";
++    default:
++      return "unknown";
++  }
++};
++
++export const getVersionOfAppData = (appData): Version => {
++  if ("tasks" in appData && "topics" in appData) {
++    // it must be v0 or v1
++    const { tasks, topics } = appData;
++    return checkVersionV0orV1(tasks, topics);
++  } else if ("taskMap" in appData && "tagMap" in appData) {
++    return Version.V2;
++  }
++  return Version.UNKNOWN;
++};
++
++export const checkVersionV0orV1 = (tasks, topics): Version => {
++  console.debug(tasks.length);
++  console.debug("taskName" in tasks[0]);
++  console.debug(topics.length);
++  console.debug("title" in topics[0]);
++  if (
++    (tasks.length > 0 && "taskName" in tasks[0]) ||
++    (topics.length > 0 && "title" in topics[0])
++  ) {
++    return Version.V0;
++  } else {
++    return Version.V1;
++  }
++};
++
++const getVersionOfImportedJSON = (jsonStr: string): Version => {
++  // Not implemented yet
++  // will be dependent on some metadata
++  // like metadata.version
++  // but if that's not there, we need to check it the old way.
++  return Version.UNKNOWN;
++};

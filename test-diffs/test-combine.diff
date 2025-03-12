@@ -1,0 +1,54 @@
+diff --git a/src/names.js b/src/names.js
+index 1234567..89abcde 100644
+--- a/src/names.js
++++ b/src/names.js
+@@ -1,12 +1,26 @@
+-// Step 1. Get the extraterrestial name of Alice
+-
+-name = "Alice Anniston";
+-// Process Bob's name:
+-// Fun extraterrestial name processing: remove vowels and append "X"
+-// This processing is repeated three times for demonstration.
+-let result = "";
+-// Repetition 1:
+-result += name.replace(/[aeiou]/gi, "");
+-// Repetition 2:
+-result += name.replace(/[aeiou]/gi, "");
+-// Repetition 3:
+-result += name.replace(/[aeiou]/gi, "");
+-result += "X";
+-name_Alice = result;
+
+-// Step 2. Get the extraterrestial name of Bob
+-
+-name = "Bob Barker";
+-// Process Bob's name:
+-// Fun extraterrestial name processing: remove vowels and append "X"
+-// This processing is repeated three times for demonstration.
+-let result = "";
+-// Repetition 1:
+-result += name.replace(/[aeiou]/gi, "");
+-// Repetition 2:
+-result += name.replace(/[aeiou]/gi, "");
+-// Repetition 3:
+-result += name.replace(/[aeiou]/gi, "");
+-result += "X";
+-name_Bob = result;
+
++// Step: Get extraterrestial names
++name_Alice = get_extraterrestial_name("Alice Anniston");
++name_Bob   = get_extraterrestial_name("Bob Barker");
++
++function get_extraterrestial_name(name) {
++    // Fun extraterrestial name processing: remove vowels and append "X"
++    // This processing is repeated three times for demonstration.
++    let result = "";
++    // Repetition 1:
++    result += name.replace(/[aeiou]/gi, "");
++    // Repetition 2:
++    result += name.replace(/[aeiou]/gi, "");
++    // Repetition 3:
++    result += name.replace(/[aeiou]/gi, "");
++    result += "X";
++    return result;
++}
