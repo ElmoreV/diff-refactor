@@ -6,11 +6,11 @@ from enum import Enum
 import argparse
 # --- Configuration ---
 
-# TODO: 1. There are double blocks: sometimes we have some lines that are SPLIT inside of a MOVED block
-# TODO: 1. ctd: what should we do with these?
-# TODO: 2. Remove the autojunk from the diff. (like )} or newlines).
-# TODO: 3. Sometimes recognises a combined added line in one file, but not a combined removed line in another.
-# TODO: 4. See: test-swap-complex.diff, it does care about the order of lines in a block!
+# TODO: DR3. See: test-swap-complex.diff, it does care about the order of lines in a block!
+# TODO: DR4. There are double blocks: sometimes we have some lines that are SPLIT inside of a MOVED block
+# TODO: DR4. ctd: what should we do with these?
+# TODO: DR5. Remove the autojunk from the diff. (like )} or newlines).
+# TODO: DR6. Sometimes recognises a combined added line in one file, but not a combined removed line in another.
 
 # Minimal block length to catch combines and splits.
 MIN_BLOCK_SIZE = 1
@@ -424,7 +424,7 @@ def output_annotated_diff(
                 if line.status == LineDiffStatus.ADDED:
                     key = (f.file_path, hi, added_counter)
                     if key in added_markers:
-                        group_lines: list[str] = []
+                        group_lines: list[ParsedHunkDiffLine] = []
                         group_keys: list[LineLocationKey] = []
                         # Group contiguous mapped added lines.
                         while (
@@ -432,7 +432,7 @@ def output_annotated_diff(
                             and hunk.lines[hunk_line_idx].status == LineDiffStatus.ADDED
                             and ((f.file_path, hi, added_counter) in added_markers)
                         ):
-                            group_lines.append(hunk.lines[hunk_line_idx].content)
+                            group_lines.append(hunk.lines[hunk_line_idx])
                             group_keys.append((f.file_path, hi, added_counter))
                             hunk_line_idx += 1
                             added_counter += 1
@@ -468,35 +468,27 @@ def output_annotated_diff(
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
                             for k, gline in zip(group_keys, group_lines):
-                                cur_added_counter = k[2]
-                                cur_line = (
-                                    hunk.hunk_header.new_start
-                                    + cur_added_counter
-                                    + neutral_counter
-                                )
                                 color = MARKER_COLORS.get(added_markers[k], "")
-                                prefix = f"A{cur_line}:" if VERBOSE else ""
+                                prefix = (
+                                    f"A{gline.absolute_new_line_no}:" if VERBOSE else ""
+                                )
 
                                 out_lines.append(
-                                    f"{prefix}{color}{added_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{added_markers[k].value}{gline.content[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
                             for k, gline in zip(group_keys, group_lines):
-                                cur_line = (
-                                    hunk.hunk_header.new_start + k[2] + neutral_counter
+                                prefix = (
+                                    f"B{gline.absolute_new_line_no}:" if VERBOSE else ""
                                 )
-                                prefix = f"B{cur_line}:" if VERBOSE else ""
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
-                                    f"{prefix}{color}{added_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{added_markers[k].value}{gline.content[1:]}{RESET}"
                                 )
                     else:
-                        cur_line = (
-                            hunk.hunk_header.new_start + hunk_line_idx - removed_counter
-                        )
-                        prefix = f"C{cur_line}:" if VERBOSE else ""
+                        prefix = f"C{line.absolute_new_line_no}:" if VERBOSE else ""
                         out_lines.append(
                             f"{prefix}{DEFAULT_ADDED_COLOR}+{line.content[1:]}{RESET}"
                         )
@@ -508,7 +500,7 @@ def output_annotated_diff(
                     # Output with block header/footer
                     key = (f.file_path, hi, removed_counter)
                     if key in removed_markers:
-                        group_lines: list[str] = []
+                        group_lines: list[ParsedHunkDiffLine] = []
                         group_keys: list[LineLocationKey] = []
                         while (
                             hunk_line_idx < len(hunk.lines)
@@ -516,7 +508,7 @@ def output_annotated_diff(
                             == LineDiffStatus.DELETED
                             and ((f.file_path, hi, removed_counter) in removed_markers)
                         ):
-                            group_lines.append(hunk.lines[hunk_line_idx].content)
+                            group_lines.append(hunk.lines[hunk_line_idx])
                             group_keys.append((f.file_path, hi, removed_counter))
                             hunk_line_idx += 1
                             removed_counter += 1
@@ -552,37 +544,26 @@ def output_annotated_diff(
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
                             for k, gline in zip(group_keys, group_lines):
-                                cur_removed_counter = k[2]
-                                cur_line = (
-                                    hunk.hunk_header.old_start
-                                    + cur_removed_counter
-                                    + neutral_counter
-                                )
                                 color = MARKER_COLORS.get(removed_markers[k], "")
-                                prefix = f"D{cur_line}:" if VERBOSE else ""
+                                prefix = (
+                                    f"D{gline.absolute_old_line_no}:" if VERBOSE else ""
+                                )
                                 out_lines.append(
-                                    f"{prefix}{color}{removed_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{removed_markers[k].value}{gline.content[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
                             for k, gline in zip(group_keys, group_lines):
-                                cur_removed_counter = k[2]
-                                cur_line = (
-                                    hunk.hunk_header.old_start
-                                    + cur_removed_counter
-                                    + neutral_counter
-                                )
                                 color = MARKER_COLORS.get(removed_markers[k], "")
-                                prefix = f"E{cur_line}:" if VERBOSE else ""
+                                prefix = (
+                                    f"E{gline.absolute_old_line_no}:" if VERBOSE else ""
+                                )
                                 out_lines.append(
-                                    f"{prefix}{color}{removed_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{removed_markers[k].value}{gline.content[1:]}{RESET}"
                                 )
                     else:
-                        cur_line = (
-                            hunk.hunk_header.old_start + hunk_line_idx - added_counter
-                        )
-                        prefix = f"F{cur_line}:" if VERBOSE else ""
+                        prefix = f"F{line.absolute_old_line_no}:" if VERBOSE else ""
                         out_lines.append(
                             f"{prefix}{DEFAULT_REMOVED_COLOR}-{line.content[1:]}{RESET}"
                         )
