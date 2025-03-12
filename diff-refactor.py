@@ -579,14 +579,7 @@ def output_annotated_diff(
                         hunk_line_idx += 1
                         removed_counter += 1
                 else:  # does not start with + or -
-                    cur_line_a = (
-                        hunk.hunk_header.old_start + hunk_line_idx - added_counter
-                    )
-
-                    cur_line_b = (
-                        hunk.hunk_header.new_start + hunk_line_idx - removed_counter
-                    )
-                    out_lines.append(f"G{cur_line_a}/{cur_line_b}:{line.content}")
+                    out_lines.append(f"G{line.absolute_old_line_no}/{line.absolute_new_line_no}:{line.content}")
                     hunk_line_idx += 1
                     neutral_counter += 1
             out_lines.append("")  # empty line after each hunk
