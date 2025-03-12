@@ -321,9 +321,9 @@ def compute_markers_individual(
             )
             if len(destination_sibling) < len(src_keys):
                 marker = LineMarker.COMBINED_ADDED
-            elif len(destination_sibling) < len(src_keys):
+            elif len(destination_sibling) == len(src_keys):
                 marker = LineMarker.MOVED_ADDED
-            else:
+            else:  # len(destination_sibling) > len(src_keys):
                 marker = LineMarker.SPLIT_ADDED
         else:
             marker = LineMarker.UNKNOWN_ADDED
