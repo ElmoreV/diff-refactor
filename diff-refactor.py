@@ -182,8 +182,6 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
 ### Mapping ########
 ####################
 
-# TODO: need to add line numbers here
-
 
 class BlockMarker(Enum):
     MOVED = "moved"
@@ -388,28 +386,6 @@ def block_marker_description(marker: LineMarker) -> BlockMarker:
 def print_hunk_header(hunk: ParsedHunkDiffHeader) -> str:
     return (
         f"@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@"
-    )
-
-
-def process_hunk_line(
-    file,
-    hunk,
-    hunk_idx,
-    hunk_line_idx,
-    added_counter,
-    removed_counter,
-    neutral_counter,
-    added_markers,
-    removed_markers,
-    out_lines,
-):
-    raise NotImplementedError
-    return (
-        added_counter,
-        removed_counter,
-        neutral_counter,
-        hunk_line_idx,
-        out_lines,
     )
 
 
