@@ -104,6 +104,7 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
                 if current_hunk is not None:
                     current_hunks.append(current_hunk)
                     current_hunk = None
+
                 files.append(
                     ParsedFileDiff(
                         header=current_header,
@@ -130,12 +131,16 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             status = FileDiffStatus.DELETED
         elif line.startswith("@@"):
             # @@ -1,256 +0,0 @@
+            # Save hunk
             if current_hunk is not None:
                 current_hunks.append(current_hunk)
+            # Create new hunk
             current_hunk = ParsedHunkDiff(
                 hunk_header=parse_hunk_header(line),
                 lines=[],
             )
+            cur_old_count = 0
+            cur_new_count = 0
         else:
             if current_hunk is not None:
                 idx = len(current_hunk.lines)
@@ -470,8 +475,10 @@ def output_annotated_diff(
                                     + neutral_counter
                                 )
                                 color = MARKER_COLORS.get(added_markers[k], "")
+                                prefix = f"A{cur_line}:" if VERBOSE else ""
+
                                 out_lines.append(
-                                    f"A{cur_line}:{color}{added_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{added_markers[k].value}{gline[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
@@ -480,23 +487,24 @@ def output_annotated_diff(
                                 cur_line = (
                                     hunk.hunk_header.new_start + k[2] + neutral_counter
                                 )
-
+                                prefix = f"B{cur_line}:" if VERBOSE else ""
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
-                                    f"B{cur_line}:{color}{added_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{added_markers[k].value}{gline[1:]}{RESET}"
                                 )
                     else:
                         cur_line = (
                             hunk.hunk_header.new_start + hunk_line_idx - removed_counter
                         )
+                        prefix = f"C{cur_line}:" if VERBOSE else ""
                         out_lines.append(
-                            f"C{cur_line}:{DEFAULT_ADDED_COLOR}+{line.content[1:]}{RESET}"
+                            f"{prefix}{DEFAULT_ADDED_COLOR}+{line.content[1:]}{RESET}"
                         )
                         hunk_line_idx += 1
                         added_counter += 1
 
                 # Process removed lines
-                elif line.status == LineDiffStatus.DELETED: 
+                elif line.status == LineDiffStatus.DELETED:
                     # Output with block header/footer
                     key = (f.file_path, hi, removed_counter)
                     if key in removed_markers:
@@ -551,8 +559,9 @@ def output_annotated_diff(
                                     + neutral_counter
                                 )
                                 color = MARKER_COLORS.get(removed_markers[k], "")
+                                prefix = f"D{cur_line}:" if VERBOSE else ""
                                 out_lines.append(
-                                    f"D{cur_line}:{color}{removed_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{removed_markers[k].value}{gline[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
@@ -565,21 +574,27 @@ def output_annotated_diff(
                                     + neutral_counter
                                 )
                                 color = MARKER_COLORS.get(removed_markers[k], "")
+                                prefix = f"E{cur_line}:" if VERBOSE else ""
                                 out_lines.append(
-                                    f"E{cur_line}:{color}{removed_markers[k].value}{gline[1:]}{RESET}"
+                                    f"{prefix}{color}{removed_markers[k].value}{gline[1:]}{RESET}"
                                 )
                     else:
                         cur_line = (
                             hunk.hunk_header.old_start + hunk_line_idx - added_counter
                         )
-
+                        prefix = f"F{cur_line}:" if VERBOSE else ""
                         out_lines.append(
-                            f"F{cur_line}:{DEFAULT_REMOVED_COLOR}-{line.content[1:]}{RESET}"
+                            f"{prefix}{DEFAULT_REMOVED_COLOR}-{line.content[1:]}{RESET}"
                         )
                         hunk_line_idx += 1
                         removed_counter += 1
                 else:  # does not start with + or -
-                    out_lines.append(f"G{line.absolute_old_line_no}/{line.absolute_new_line_no}:{line.content}")
+                    prefix = (
+                        f"G{line.absolute_old_line_no}/{line.absolute_new_line_no}:"
+                        if VERBOSE
+                        else ""
+                    )
+                    out_lines.append(f"{prefix}{line.content}")
                     hunk_line_idx += 1
                     neutral_counter += 1
             out_lines.append("")  # empty line after each hunk
@@ -596,8 +611,8 @@ def main():
     files = parse_diff(diff_text)
     file_dict = {f.file_path: f for f in files}
     added_mapping, removed_mapping = build_match_mappings(files)
-    print(DEBUG)
-    if DEBUG:
+    print(VERBOSE)
+    if VERBOSE:
         from pprint import pprint
 
         print(
@@ -617,15 +632,17 @@ def main():
     print(annotated)
 
 
-DEBUG: bool = False
+VERBOSE: bool = False
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="diff-refactor",
         description="Provides a diff tailored to diffing refactorings",
         epilog="Example: diff-refactor ",
     )
-    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
+    )
     args = parser.parse_args()
-    if args.debug:
-        DEBUG = True
+    if args.verbose:
+        VERBOSE = True
     main()
