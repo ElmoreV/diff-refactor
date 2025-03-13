@@ -454,9 +454,6 @@ def output_annotated_diff(
                             else:
                                 src_file, src_line = "unknown", "?"
 
-                            # dst_line = dst_info.new_start = line number of the hunk in the new file
-                            # block_keys[0] is the first line of the grouped added block
-                            # block_keys[0][2] is the hunk line number of the first line of the block
                             dst_line = block_lines[0].absolute_new_line_no
                             header_blk = f"----- {desc} block from {src_file}:{src_line} to {f.file_path}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
