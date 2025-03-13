@@ -300,7 +300,6 @@ def build_match_mappings(
                             ]
                         )
                     }
-
                     if len(dst_lines) == 0:
                         continue
                     # Find all the matching blocks in the sequences of src_lines and dst_lines
@@ -309,10 +308,9 @@ def build_match_mappings(
                         if block.size >= MIN_BLOCK_SIZE:
                             for k in range(block.size):
                                 # Map each line in the src to each line in the dst
-                                # src_idx = the id of the line given all the added lines in this hunk
-                                # dst = the id of the line given all the removed lines in this hunk
-                                src_line_pos = src_abs_line_pos[block.a] + k
-                                dst_line_pos = dst_abs_line_pos[block.b] + k
+                                # src/dst_line_pos = the aboslute position of the line
+                                src_line_pos = src_abs_line_pos[block.a + k]
+                                dst_line_pos = dst_abs_line_pos[block.b + k]
                                 src_key = (src.file_path, srch_ii, src_line_pos)
                                 dst_key = (dst.file_path, dsth_jj, dst_line_pos)
                                 added_mapping.setdefault(dst_key, []).append(src_key)
@@ -622,19 +620,20 @@ def main():
     diff_text = sys.stdin.read()
     files = parse_diff(diff_text)
     file_dict = {f.file_path: f for f in files}
+    if VERBOSE:
+        from pprint import pprint
+
+        pprint(file_dict)
     added_mapping, removed_mapping = build_match_mappings(files)
     print(VERBOSE)
     if VERBOSE:
         from pprint import pprint
 
-        print(
-            "(file path, hunk index, line index) -> list[(file path, hunk index, line index)]"
-        )
+        print("(file path, hunk idx, line.no) -> list[(file path, hunk idx, line.no)]")
         print("added mapping")
         pprint(added_mapping)
         print("removed mapping")
         pprint(removed_mapping)
-
     added_markers, removed_markers = compute_markers_individual(
         added_mapping, removed_mapping
     )
