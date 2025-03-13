@@ -103,8 +103,6 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             if current_file is not None:
                 if current_hunk is not None:
                     current_hunks.append(current_hunk)
-                    current_hunk = None
-
                 files.append(
                     ParsedFileDiff(
                         header=current_header,
@@ -118,8 +116,7 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             current_file = parts[3][2:] if len(parts) >= 4 else "unknown"
             current_hunks = []
             current_hunk = None
-            cur_old_count = 0
-            cur_new_count = 0
+            cur_old_count = cur_new_count = 0
             status = FileDiffStatus.MODIFIED
         elif line.startswith("new file mode"):
             # new file mode 100644
@@ -131,16 +128,13 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
             status = FileDiffStatus.DELETED
         elif line.startswith("@@"):
             # @@ -1,256 +0,0 @@
-            # Save hunk
             if current_hunk is not None:
                 current_hunks.append(current_hunk)
-            # Create new hunk
             current_hunk = ParsedHunkDiff(
                 hunk_header=parse_hunk_header(line),
                 lines=[],
             )
-            cur_old_count = 0
-            cur_new_count = 0
+            cur_old_count = cur_new_count = 0
         else:
             if current_hunk is not None:
                 idx = len(current_hunk.lines)
@@ -209,7 +203,7 @@ class LineMarker(Enum):
     UNKNOWN = "??"
 
 
-# type alias
+# type alias (file_path, hunk_idx, line.no)
 LineLocationKey = tuple[str, int, int]
 MappingDict = dict[LineLocationKey, list[LineLocationKey]]
 
@@ -266,17 +260,17 @@ def build_match_mappings(
             for srch_ii, src_hunk in enumerate(src.hunks):
                 # Find all the normed lines that are removed in this hunk
                 src_lines = [
-                    line.normed_content
-                    for line in src_hunk.lines
-                    if line.status == LineDiffStatus.DELETED
+                    l.normed_content
+                    for l in src_hunk.lines
+                    if l.status == LineDiffStatus.DELETED
                 ]
                 src_abs_line_pos: dict[int, int] = {
-                    ii: line.absolute_old_line_no
-                    for ii, line in enumerate(
+                    ii: l.absolute_old_line_no
+                    for ii, l in enumerate(
                         [
-                            line
-                            for line in src_hunk.lines
-                            if line.status == LineDiffStatus.DELETED
+                            l
+                            for l in src_hunk.lines
+                            if l.status == LineDiffStatus.DELETED
                         ]
                     )
                     # and line.absolute_old_line_no is not None
@@ -286,17 +280,17 @@ def build_match_mappings(
                 for dsth_jj, dst_hunk in enumerate(dst.hunks):
                     # Find all the normed lines that are added in this hunk
                     dst_lines = [
-                        line.normed_content
-                        for line in dst_hunk.lines
-                        if line.status == LineDiffStatus.ADDED
+                        l.normed_content
+                        for l in dst_hunk.lines
+                        if l.status == LineDiffStatus.ADDED
                     ]
                     dst_abs_line_pos: dict[int, int] = {
-                        ii: line.absolute_new_line_no
-                        for ii, line in enumerate(
+                        ii: l.absolute_new_line_no
+                        for ii, l in enumerate(
                             [
-                                line
-                                for line in dst_hunk.lines
-                                if line.status == LineDiffStatus.ADDED
+                                l
+                                for l in dst_hunk.lines
+                                if l.status == LineDiffStatus.ADDED
                             ]
                         )
                     }
@@ -318,14 +312,10 @@ def build_match_mappings(
     return added_mapping, removed_mapping
 
 
-# type alias
-LineMarkerDict = dict[LineLocationKey, LineMarker]
-
-
 def compute_markers_individual(
     added_mapping: MappingDict,
     removed_mapping: MappingDict,
-) -> tuple[LineMarkerDict, LineMarkerDict]:
+) -> tuple[dict[LineLocationKey, LineMarker], dict[LineLocationKey, LineMarker]]:
     """Assign a marker per mapped line."""
     added_markers = {}
     # for all elements:
@@ -395,7 +385,6 @@ MARKER_COLORS = {
 HEADER_HUNK_COLOR = "\033[1;36m"  # bright cyan for header hunk
 DEFAULT_ADDED_COLOR = "\033[1;32m"  # bright green for unmapped +
 DEFAULT_REMOVED_COLOR = "\033[1;31m"  # bright red for unmapped -
-
 RESET = "\033[0m"
 
 
@@ -404,7 +393,7 @@ def block_marker_description(marker: LineMarker) -> BlockMarker:
         return BlockMarker.MOVED
     elif marker in (LineMarker.SPLIT_ADDED, LineMarker.SPLIT_REMOVED):
         return BlockMarker.SPLIT
-    elif marker in (LineMarker.COMBINED_REMOVED, LineMarker.COMBINED_ADDED):
+    elif marker in (LineMarker.COMBINED_ADDED, LineMarker.COMBINED_REMOVED):
         return BlockMarker.COMBINED
     return BlockMarker.UNKNOWN
 
@@ -417,16 +406,15 @@ def print_hunk_header(hunk: ParsedHunkDiffHeader) -> str:
 
 def output_annotated_diff(
     files: list[ParsedFileDiff],
-    added_markers: LineMarkerDict,
-    removed_markers: LineMarkerDict,
+    added_markers: dict[LineLocationKey, LineMarker],
+    removed_markers: dict[LineLocationKey, LineMarker],
     file_dict: dict[str, ParsedFileDiff],
     added_mapping: MappingDict,
     removed_mapping: MappingDict,
 ):
     out_lines = []
     for f in files:
-        for header_line in f.header:
-            out_lines.append(header_line)
+        out_lines.extend(f.header)
         for hi, hunk in enumerate(f.hunks):
             if hunk.hunk_header is not None:
                 hunk_header_line = print_hunk_header(hunk.hunk_header)
