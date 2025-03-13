@@ -442,10 +442,13 @@ def output_annotated_diff(
                             desc = block_marker_description(marker)
                             # Get source info from the mapping if available:
 
-                            src_keys = added_mapping.get(block_keys[0], [])
+                            src_first_block_line_keys = added_mapping.get(
+                                block_keys[0], []
+                            )
                             # Get first line
-                            if src_keys:
-                                first_src = src_keys[0]
+                            if src_first_block_line_keys:
+                                # (f.file_path, hi, added_counter)
+                                first_src = src_first_block_line_keys[0]
                                 src_file, src_hunk_idx, src_line_idx = first_src
                                 src_info = (
                                     file_dict[src_file].hunks[src_hunk_idx].hunk_header
@@ -468,25 +471,25 @@ def output_annotated_diff(
                             header_blk = f"----- {desc} block from {src_file}:{src_line} to {f.file_path}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
-                            for k, gline in zip(block_keys, block_lines):
+                            for k, bline in zip(block_keys, block_lines):
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 prefix = (
-                                    f"A{gline.absolute_new_line_no}:" if VERBOSE else ""
+                                    f"A{bline.absolute_new_line_no}:" if VERBOSE else ""
                                 )
 
                                 out_lines.append(
-                                    f"{prefix}{color}{added_markers[k].value}{gline.content[1:]}{RESET}"
+                                    f"{prefix}{color}{added_markers[k].value}{bline.content[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
-                            for k, gline in zip(block_keys, block_lines):
+                            for k, bline in zip(block_keys, block_lines):
                                 prefix = (
-                                    f"B{gline.absolute_new_line_no}:" if VERBOSE else ""
+                                    f"B{bline.absolute_new_line_no}:" if VERBOSE else ""
                                 )
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 out_lines.append(
-                                    f"{prefix}{color}{added_markers[k].value}{gline.content[1:]}{RESET}"
+                                    f"{prefix}{color}{added_markers[k].value}{bline.content[1:]}{RESET}"
                                 )
                     else:
                         prefix = f"C{line.absolute_new_line_no}:" if VERBOSE else ""
@@ -516,9 +519,11 @@ def output_annotated_diff(
                         if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
                             marker = removed_markers[block_keys[0]]
                             desc = block_marker_description(marker)
-                            dst_keys = removed_mapping.get(block_keys[0], [])
-                            if dst_keys:
-                                first_dst = dst_keys[0]
+                            dst_first_block_line_keys = removed_mapping.get(
+                                block_keys[0], []
+                            )
+                            if dst_first_block_line_keys:
+                                first_dst = dst_first_block_line_keys[0]
                                 dst_file, dst_hunk_idx, dst_line_idx = first_dst
                                 dst_info = (
                                     file_dict[dst_file].hunks[dst_hunk_idx].hunk_header
@@ -544,24 +549,24 @@ def output_annotated_diff(
                             header_blk = f"----- {desc} block from {f.file_path}:{src_line} to {dst_file}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
-                            for k, gline in zip(block_keys, block_lines):
+                            for k, bline in zip(block_keys, block_lines):
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 prefix = (
-                                    f"D{gline.absolute_old_line_no}:" if VERBOSE else ""
+                                    f"D{bline.absolute_old_line_no}:" if VERBOSE else ""
                                 )
                                 out_lines.append(
-                                    f"{prefix}{color}{removed_markers[k].value}{gline.content[1:]}{RESET}"
+                                    f"{prefix}{color}{removed_markers[k].value}{bline.content[1:]}{RESET}"
                                 )
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
-                            for k, gline in zip(block_keys, block_lines):
+                            for k, bline in zip(block_keys, block_lines):
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 prefix = (
-                                    f"E{gline.absolute_old_line_no}:" if VERBOSE else ""
+                                    f"E{bline.absolute_old_line_no}:" if VERBOSE else ""
                                 )
                                 out_lines.append(
-                                    f"{prefix}{color}{removed_markers[k].value}{gline.content[1:]}{RESET}"
+                                    f"{prefix}{color}{removed_markers[k].value}{bline.content[1:]}{RESET}"
                                 )
                     else:
                         prefix = f"F{line.absolute_old_line_no}:" if VERBOSE else ""
