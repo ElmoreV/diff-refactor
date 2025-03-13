@@ -424,25 +424,26 @@ def output_annotated_diff(
                 if line.status == LineDiffStatus.ADDED:
                     key = (f.file_path, hi, added_counter)
                     if key in added_markers:
-                        group_lines: list[ParsedHunkDiffLine] = []
-                        group_keys: list[LineLocationKey] = []
+                        block_lines: list[ParsedHunkDiffLine] = []
+                        block_keys: list[LineLocationKey] = []
                         # Group contiguous mapped added lines.
                         while (
                             hunk_line_idx < len(hunk.lines)
                             and hunk.lines[hunk_line_idx].status == LineDiffStatus.ADDED
                             and ((f.file_path, hi, added_counter) in added_markers)
                         ):
-                            group_lines.append(hunk.lines[hunk_line_idx])
-                            group_keys.append((f.file_path, hi, added_counter))
+                            block_lines.append(hunk.lines[hunk_line_idx])
+                            block_keys.append((f.file_path, hi, added_counter))
                             hunk_line_idx += 1
                             added_counter += 1
-                        if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
+                        if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
                             # Output with block header/footer
-                            marker = added_markers[group_keys[0]]
+                            marker = added_markers[block_keys[0]]
                             desc = block_marker_description(marker)
                             # Get source info from the mapping if available:
 
-                            src_keys = added_mapping.get(group_keys[0], [])
+                            src_keys = added_mapping.get(block_keys[0], [])
+                            # Get first line
                             if src_keys:
                                 first_src = src_keys[0]
                                 src_file, src_hunk_idx, src_line_idx = first_src
@@ -459,15 +460,15 @@ def output_annotated_diff(
                                 src_file, src_line = "unknown", "?"
 
                             # dst_line = dst_info.new_start = line number of the hunk in the new file
-                            # group_keys[0] is the first line of the grouped added block
-                            # group_keys[0][2] is the hunk line number of the first line of the block
+                            # block_keys[0] is the first line of the grouped added block
+                            # block_keys[0][2] is the hunk line number of the first line of the block
                             dst_line = (
-                                dst_new_start + group_keys[0][2] + neutral_counter
+                                dst_new_start + block_keys[0][2] + neutral_counter
                             )
                             header_blk = f"----- {desc} block from {src_file}:{src_line} to {f.file_path}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
-                            for k, gline in zip(group_keys, group_lines):
+                            for k, gline in zip(block_keys, block_lines):
                                 color = MARKER_COLORS.get(added_markers[k], "")
                                 prefix = (
                                     f"A{gline.absolute_new_line_no}:" if VERBOSE else ""
@@ -479,7 +480,7 @@ def output_annotated_diff(
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
-                            for k, gline in zip(group_keys, group_lines):
+                            for k, gline in zip(block_keys, block_lines):
                                 prefix = (
                                     f"B{gline.absolute_new_line_no}:" if VERBOSE else ""
                                 )
@@ -500,22 +501,22 @@ def output_annotated_diff(
                     # Output with block header/footer
                     key = (f.file_path, hi, removed_counter)
                     if key in removed_markers:
-                        group_lines: list[ParsedHunkDiffLine] = []
-                        group_keys: list[LineLocationKey] = []
+                        block_lines: list[ParsedHunkDiffLine] = []
+                        block_keys: list[LineLocationKey] = []
                         while (
                             hunk_line_idx < len(hunk.lines)
                             and hunk.lines[hunk_line_idx].status
                             == LineDiffStatus.DELETED
                             and ((f.file_path, hi, removed_counter) in removed_markers)
                         ):
-                            group_lines.append(hunk.lines[hunk_line_idx])
-                            group_keys.append((f.file_path, hi, removed_counter))
+                            block_lines.append(hunk.lines[hunk_line_idx])
+                            block_keys.append((f.file_path, hi, removed_counter))
                             hunk_line_idx += 1
                             removed_counter += 1
-                        if len(group_lines) >= BLOCK_HEADER_THRESHOLD:
-                            marker = removed_markers[group_keys[0]]
+                        if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
+                            marker = removed_markers[block_keys[0]]
                             desc = block_marker_description(marker)
-                            dst_keys = removed_mapping.get(group_keys[0], [])
+                            dst_keys = removed_mapping.get(block_keys[0], [])
                             if dst_keys:
                                 first_dst = dst_keys[0]
                                 dst_file, dst_hunk_idx, dst_line_idx = first_dst
@@ -534,16 +535,16 @@ def output_annotated_diff(
                             src_line = (
                                 (
                                     src_info.old_start
-                                    + group_keys[0][2]
+                                    + block_keys[0][2]
                                     + neutral_counter
                                 )
                                 if src_info is not None
-                                else group_keys[0][2]
+                                else block_keys[0][2]
                             )
                             header_blk = f"----- {desc} block from {f.file_path}:{src_line} to {dst_file}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
-                            for k, gline in zip(group_keys, group_lines):
+                            for k, gline in zip(block_keys, block_lines):
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 prefix = (
                                     f"D{gline.absolute_old_line_no}:" if VERBOSE else ""
@@ -554,7 +555,7 @@ def output_annotated_diff(
                             out_lines.append(footer_blk)
                         else:
                             # Output wihtout block header/footer
-                            for k, gline in zip(group_keys, group_lines):
+                            for k, gline in zip(block_keys, block_lines):
                                 color = MARKER_COLORS.get(removed_markers[k], "")
                                 prefix = (
                                     f"E{gline.absolute_old_line_no}:" if VERBOSE else ""
