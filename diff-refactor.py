@@ -287,7 +287,8 @@ def build_match_mappings(
                         if block.size >= MIN_BLOCK_SIZE:
                             for k in range(block.size):
                                 # Map each line in the src to each line in the dst
-                                # src_idx = the matching line no in the hunk
+                                # src_idx = the id of the line given all the added lines in this hunk
+                                # dst = the id of the line given all the removed lines in this hunk
                                 src_idx = block.a + k
                                 dst_idx = block.b + k
                                 src_key = (src.file_path, srch_ii, src_idx)
@@ -411,13 +412,9 @@ def output_annotated_diff(
                 hunk_header_line = print_hunk_header(hunk.hunk_header)
                 out_lines.append(f"{HEADER_HUNK_COLOR}{hunk_header_line}{RESET}")
             # Parse destination hunk header for new start line.
-            dst_info = hunk.hunk_header
-            dst_new_start = dst_info.new_start if dst_info is not None else 0
-
             hunk_line_idx = 0
             added_counter = 0
             removed_counter = 0
-            neutral_counter = 0
             while hunk_line_idx < len(hunk.lines):
                 line = hunk.lines[hunk_line_idx]
                 # Process added lines
@@ -441,23 +438,18 @@ def output_annotated_diff(
                             marker = added_markers[block_keys[0]]
                             desc = block_marker_description(marker)
                             # Get source info from the mapping if available:
-
                             src_first_block_line_keys = added_mapping.get(
                                 block_keys[0], []
                             )
-                            # Get first line
                             if src_first_block_line_keys:
-                                # (f.file_path, hi, added_counter)
-                                first_src = src_first_block_line_keys[0]
-                                src_file, src_hunk_idx, src_line_idx = first_src
-                                src_info = (
-                                    file_dict[src_file].hunks[src_hunk_idx].hunk_header
+                                src_file, src_hunk_idx, src_line_in_added_lines_idx = (
+                                    src_first_block_line_keys[0]
                                 )
                                 src_line = (
-                                    # we actually want old_start + src_line_idx - src_removed_counter)
-                                    (src_info.old_start + src_line_idx)
-                                    if src_info is not None
-                                    else src_line_idx
+                                    file_dict[src_file]
+                                    .hunks[src_hunk_idx]
+                                    .lines[src_line_in_added_lines_idx]
+                                    .absolute_old_line_no
                                 )
                             else:
                                 src_file, src_line = "unknown", "?"
@@ -465,9 +457,7 @@ def output_annotated_diff(
                             # dst_line = dst_info.new_start = line number of the hunk in the new file
                             # block_keys[0] is the first line of the grouped added block
                             # block_keys[0][2] is the hunk line number of the first line of the block
-                            dst_line = (
-                                dst_new_start + block_keys[0][2] + neutral_counter
-                            )
+                            dst_line = block_lines[0].absolute_new_line_no
                             header_blk = f"----- {desc} block from {src_file}:{src_line} to {f.file_path}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
@@ -523,29 +513,20 @@ def output_annotated_diff(
                                 block_keys[0], []
                             )
                             if dst_first_block_line_keys:
-                                first_dst = dst_first_block_line_keys[0]
-                                dst_file, dst_hunk_idx, dst_line_idx = first_dst
-                                dst_info = (
-                                    file_dict[dst_file].hunks[dst_hunk_idx].hunk_header
-                                )
-                                # we actually want new_start + dst_line_idx - dst_removed_counter)
+                                (
+                                    dst_file,
+                                    dst_hunk_idx,
+                                    dst_line_in_removed_lines_idx,
+                                ) = dst_first_block_line_keys[0]
                                 dst_line = (
-                                    (dst_info.new_start + dst_line_idx)
-                                    if dst_info is not None
-                                    else dst_line_idx
+                                    file_dict[dst_file]
+                                    .hunks[dst_hunk_idx]
+                                    .lines[dst_line_in_removed_lines_idx]
+                                    .absolute_new_line_no
                                 )
                             else:
                                 dst_file, dst_line = "unknown", "?"
-                            src_info = hunk.hunk_header
-                            src_line = (
-                                (
-                                    src_info.old_start
-                                    + block_keys[0][2]
-                                    + neutral_counter
-                                )
-                                if src_info is not None
-                                else block_keys[0][2]
-                            )
+                            src_line = block_lines[0].absolute_old_line_no
                             header_blk = f"----- {desc} block from {f.file_path}:{src_line} to {dst_file}:{dst_line} -----"
                             footer_blk = f"----- end {desc} block -----"
                             out_lines.append(header_blk)
@@ -583,7 +564,6 @@ def output_annotated_diff(
                     )
                     out_lines.append(f"{prefix}{line.content}")
                     hunk_line_idx += 1
-                    neutral_counter += 1
             out_lines.append("")  # empty line after each hunk
     return "\n".join(out_lines)
 
