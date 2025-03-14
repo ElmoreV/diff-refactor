@@ -11,6 +11,7 @@ import argparse
 # TODO: DR4. ctd: what should we do with these?
 # TODO: DR5. Remove the autojunk from the diff. (like )} or newlines).
 # TODO: DR6. Sometimes recognises a combined added line in one file, but not a combined removed line in another.
+# TODO: DR7. Create a good test suite
 
 # Minimal block length to catch combines and splits.
 MIN_BLOCK_SIZE = 1
@@ -515,7 +516,6 @@ def output_annotated_diff(
             # Parse destination hunk header for new start line.
             hunk_line_idx = 0
             while hunk_line_idx < len(hunk.lines):
-                print(hunk_line_idx)
                 line = hunk.lines[hunk_line_idx]
                 # Process added lines
                 if line.status == LineDiffStatus.ADDED:
@@ -571,7 +571,6 @@ def main():
 
         pprint(file_dict)
     added_mapping, removed_mapping = build_match_mappings(files)
-    print(VERBOSE)
     if VERBOSE:
         from pprint import pprint
 
