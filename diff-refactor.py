@@ -404,6 +404,99 @@ def print_hunk_header(hunk: ParsedHunkDiffHeader) -> str:
     )
 
 
+def process_mapped_block(
+    file_path: str,
+    hi: int,
+    line: ParsedHunkDiffLine,
+    markers: dict[LineLocationKey, LineMarker],
+    mapping: MappingDict,
+    hunk_line_idx: int,
+    hunk: ParsedHunkDiff,
+    file_dict: dict[str, ParsedFileDiff],
+    is_added: bool,
+) -> tuple[list[str], int]:  # out_lines, hunk_line_idx
+    def get_line_no(line):
+        return line.absolute_new_line_no if is_added else line.absolute_old_line_no
+
+    def get_other_line_no(line):
+        return line.absolute_old_line_no if is_added else line.absolute_new_line_no
+
+    out_lines = []
+    key = (file_path, hi, get_line_no(line))
+    if key in markers:
+        block_lines: list[ParsedHunkDiffLine] = []
+        block_keys: list[LineLocationKey] = []
+        # Group contiguous mapped added or removed lines.
+        status_to_check = LineDiffStatus.ADDED if is_added else LineDiffStatus.DELETED
+        while (
+            hunk_line_idx < len(hunk.lines)
+            and hunk.lines[hunk_line_idx].status == status_to_check
+            and (file_path, hi, get_line_no(hunk.lines[hunk_line_idx])) in markers
+        ):
+            block_lines.append(hunk.lines[hunk_line_idx])
+            block_keys.append(
+                (
+                    file_path,
+                    hi,
+                    get_line_no(hunk.lines[hunk_line_idx]),
+                )
+            )
+            hunk_line_idx += 1
+        if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
+            # Output with block header/footer
+            marker = markers[block_keys[0]]
+            desc = block_marker_description(marker)
+            # Get info of the other side from the mapping if available:
+            other_first_block_line_keys = mapping.get(block_keys[0], [])
+            if other_first_block_line_keys:
+                other_file, other_hunk_idx, other_absolute_line_no = (
+                    other_first_block_line_keys[0]
+                )
+                other_lines = file_dict[other_file].hunks[other_hunk_idx].lines
+                other_line_no = [
+                    get_other_line_no(other_line)
+                    for other_line in other_lines
+                    if get_other_line_no(other_line) == other_absolute_line_no
+                ][0]
+            else:
+                other_file, other_line_no = "unknown", "?"
+
+            this_line_no = get_line_no(block_lines[0])
+            dst_file = file_path if is_added else other_file
+            dst_line = this_line_no if is_added else other_line_no
+            src_file = other_file if is_added else file_path
+            src_line = other_line_no if is_added else this_line_no
+
+            header_blk = f"----- {desc} block from {src_file}:{src_line} to {dst_file}:{dst_line} -----"
+            footer_blk = f"----- end {desc} block -----"
+            out_lines.append(header_blk)
+            for k, bline in zip(block_keys, block_lines):
+                color = MARKER_COLORS.get(markers[k], "")
+                letter = "A" if is_added else "D"
+                prefix = f"{letter}{get_line_no(bline)}:" if VERBOSE else ""
+                out_lines.append(
+                    f"{prefix}{color}{markers[k].value}{bline.content[1:]}{RESET}"
+                )
+            out_lines.append(footer_blk)
+        else:
+            # Output wihtout block header/footer
+            for k, bline in zip(block_keys, block_lines):
+                letter = "B" if is_added else "E"
+                prefix = f"{letter}{get_line_no(bline)}:" if VERBOSE else ""
+                color = MARKER_COLORS.get(markers[k], "")
+                out_lines.append(
+                    f"{prefix}{color}{markers[k].value}{bline.content[1:]}{RESET}"
+                )
+    else:
+        letter = "C" if is_added else "F"
+        prefix = f"{letter}{get_line_no(line)}:" if VERBOSE else ""
+        color = DEFAULT_ADDED_COLOR if is_added else DEFAULT_REMOVED_COLOR
+        sign = "+" if is_added else "-"
+        out_lines.append(f"{prefix}{color}{sign}{line.content[1:]}{RESET}")
+        hunk_line_idx += 1
+    return out_lines, hunk_line_idx
+
+
 def output_annotated_diff(
     files: list[ParsedFileDiff],
     added_markers: dict[LineLocationKey, LineMarker],
@@ -422,171 +515,36 @@ def output_annotated_diff(
             # Parse destination hunk header for new start line.
             hunk_line_idx = 0
             while hunk_line_idx < len(hunk.lines):
+                print(hunk_line_idx)
                 line = hunk.lines[hunk_line_idx]
                 # Process added lines
                 if line.status == LineDiffStatus.ADDED:
-                    key = (f.file_path, hi, line.absolute_new_line_no)
-                    if key in added_markers:
-                        block_lines: list[ParsedHunkDiffLine] = []
-                        block_keys: list[LineLocationKey] = []
-                        # Group contiguous mapped added lines.
-                        while (
-                            hunk_line_idx < len(hunk.lines)
-                            and hunk.lines[hunk_line_idx].status == LineDiffStatus.ADDED
-                            and (
-                                (
-                                    f.file_path,
-                                    hi,
-                                    hunk.lines[hunk_line_idx].absolute_new_line_no,
-                                )
-                                in added_markers
-                            )
-                        ):
-                            block_lines.append(hunk.lines[hunk_line_idx])
-                            block_keys.append(
-                                (
-                                    f.file_path,
-                                    hi,
-                                    hunk.lines[hunk_line_idx].absolute_new_line_no,
-                                )
-                            )
-                            hunk_line_idx += 1
-                        if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
-                            # Output with block header/footer
-                            marker = added_markers[block_keys[0]]
-                            desc = block_marker_description(marker)
-                            # Get source info from the mapping if available:
-                            src_first_block_line_keys = added_mapping.get(
-                                block_keys[0], []
-                            )
-                            if src_first_block_line_keys:
-                                src_file, src_hunk_idx, src_absolute_line_no = (
-                                    src_first_block_line_keys[0]
-                                )
-                                src_lines = (
-                                    file_dict[src_file].hunks[src_hunk_idx].lines
-                                )
-                                src_line = [
-                                    src_line.absolute_old_line_no
-                                    for src_line in src_lines
-                                    if src_line.absolute_old_line_no
-                                    == src_absolute_line_no
-                                ][0]
-                            else:
-                                src_file, src_line = "unknown", "?"
-
-                            dst_line = block_lines[0].absolute_new_line_no
-                            header_blk = f"----- {desc} block from {src_file}:{src_line} to {f.file_path}:{dst_line} -----"
-                            footer_blk = f"----- end {desc} block -----"
-                            out_lines.append(header_blk)
-                            for k, bline in zip(block_keys, block_lines):
-                                color = MARKER_COLORS.get(added_markers[k], "")
-                                prefix = (
-                                    f"A{bline.absolute_new_line_no}:" if VERBOSE else ""
-                                )
-
-                                out_lines.append(
-                                    f"{prefix}{color}{added_markers[k].value}{bline.content[1:]}{RESET}"
-                                )
-                            out_lines.append(footer_blk)
-                        else:
-                            # Output wihtout block header/footer
-                            for k, bline in zip(block_keys, block_lines):
-                                prefix = (
-                                    f"B{bline.absolute_new_line_no}:" if VERBOSE else ""
-                                )
-                                color = MARKER_COLORS.get(added_markers[k], "")
-                                out_lines.append(
-                                    f"{prefix}{color}{added_markers[k].value}{bline.content[1:]}{RESET}"
-                                )
-                    else:
-                        prefix = f"C{line.absolute_new_line_no}:" if VERBOSE else ""
-                        out_lines.append(
-                            f"{prefix}{DEFAULT_ADDED_COLOR}+{line.content[1:]}{RESET}"
-                        )
-                        hunk_line_idx += 1
-
+                    more_out_lines, hunk_line_idx = process_mapped_block(
+                        f.file_path,
+                        hi,
+                        line,
+                        added_markers,
+                        added_mapping,
+                        hunk_line_idx,
+                        hunk,
+                        file_dict,
+                        True,
+                    )
+                    out_lines.extend(more_out_lines)
                 # Process removed lines
                 elif line.status == LineDiffStatus.DELETED:
-                    # Output with block header/footer
-                    key = (f.file_path, hi, line.absolute_old_line_no)
-                    if key in removed_markers:
-                        block_lines: list[ParsedHunkDiffLine] = []
-                        block_keys: list[LineLocationKey] = []
-                        while (
-                            hunk_line_idx < len(hunk.lines)
-                            and hunk.lines[hunk_line_idx].status
-                            == LineDiffStatus.DELETED
-                            and (
-                                (
-                                    f.file_path,
-                                    hi,
-                                    hunk.lines[hunk_line_idx].absolute_old_line_no,
-                                )
-                                in removed_markers
-                            )
-                        ):
-                            block_lines.append(hunk.lines[hunk_line_idx])
-                            block_keys.append(
-                                (
-                                    f.file_path,
-                                    hi,
-                                    hunk.lines[hunk_line_idx].absolute_old_line_no,
-                                )
-                            )
-                            hunk_line_idx += 1
-                        if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
-                            marker = removed_markers[block_keys[0]]
-                            desc = block_marker_description(marker)
-                            dst_first_block_line_keys = removed_mapping.get(
-                                block_keys[0], []
-                            )
-                            if dst_first_block_line_keys:
-                                (
-                                    dst_file,
-                                    dst_hunk_idx,
-                                    dst_absolute_line_no,
-                                ) = dst_first_block_line_keys[0]
-                                dst_lines = (
-                                    file_dict[dst_file].hunks[dst_hunk_idx].lines
-                                )
-                                dst_line = [
-                                    dst_line.absolute_new_line_no
-                                    for dst_line in dst_lines
-                                    if dst_line.absolute_new_line_no
-                                    == dst_absolute_line_no
-                                ][0]
-                            else:
-                                dst_file, dst_line = "unknown", "?"
-                            src_line = block_lines[0].absolute_old_line_no
-                            header_blk = f"----- {desc} block from {f.file_path}:{src_line} to {dst_file}:{dst_line} -----"
-                            footer_blk = f"----- end {desc} block -----"
-                            out_lines.append(header_blk)
-                            for k, bline in zip(block_keys, block_lines):
-                                color = MARKER_COLORS.get(removed_markers[k], "")
-                                prefix = (
-                                    f"D{bline.absolute_old_line_no}:" if VERBOSE else ""
-                                )
-                                out_lines.append(
-                                    f"{prefix}{color}{removed_markers[k].value}{bline.content[1:]}{RESET}"
-                                )
-                            out_lines.append(footer_blk)
-                        else:
-                            # Output wihtout block header/footer
-                            for k, bline in zip(block_keys, block_lines):
-                                color = MARKER_COLORS.get(removed_markers[k], "")
-                                prefix = (
-                                    f"E{bline.absolute_old_line_no}:" if VERBOSE else ""
-                                )
-                                out_lines.append(
-                                    f"{prefix}{color}{removed_markers[k].value}{bline.content[1:]}{RESET}"
-                                )
-                    else:
-                        prefix = f"F{line.absolute_old_line_no}:" if VERBOSE else ""
-                        out_lines.append(
-                            f"{prefix}{DEFAULT_REMOVED_COLOR}-{line.content[1:]}{RESET}"
-                        )
-                        hunk_line_idx += 1
+                    more_out_lines, hunk_line_idx = process_mapped_block(
+                        f.file_path,
+                        hi,
+                        line,
+                        removed_markers,
+                        removed_mapping,
+                        hunk_line_idx,
+                        hunk,
+                        file_dict,
+                        False,
+                    )
+                    out_lines.extend(more_out_lines)
                 else:  # does not start with + or -
                     prefix = (
                         f"G{line.absolute_old_line_no}/{line.absolute_new_line_no}:"
