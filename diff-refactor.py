@@ -1,6 +1,7 @@
 import sys
 import difflib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 import argparse
@@ -413,6 +414,45 @@ def is_contiguous_key(prev_key: LineLocationKey, cur_key: LineLocationKey) -> bo
     )
 
 
+def get_contiguous_block(
+    hunk: ParsedHunkDiff,
+    hunk_line_idx: int,
+    file_path: str,
+    hi: int,
+    other_key: LineLocationKey,
+    get_line_no: Callable[[ParsedHunkDiffLine], int],
+    status_to_check: LineDiffStatus,
+    markers: dict[LineLocationKey, LineMarker],
+    mapping: MappingDict,
+) -> tuple[list[LineLocationKey], list[ParsedHunkDiffLine]]:
+    block_lines: list[ParsedHunkDiffLine] = []
+    block_keys: list[LineLocationKey] = []
+    prev_other_key: LineLocationKey = other_key
+    # Group contiguous mapped added or removed lines.
+    block_idx = hunk_line_idx
+    while (
+        block_idx < len(hunk.lines)
+        and hunk.lines[block_idx].status == status_to_check
+        and (file_path, hi, get_line_no(hunk.lines[block_idx])) in markers
+    ):
+        cur_line = hunk.lines[block_idx]
+        cur_key = (file_path, hi, get_line_no(cur_line))
+        # Check if there is a possible contiguous block
+        cur_other_keys = mapping.get(cur_key, [])
+        contiguous_other_key = None
+        for cur_other_key in cur_other_keys:
+            if is_contiguous_key(prev_other_key, cur_other_key):
+                contiguous_other_key = cur_other_key
+                break
+        if contiguous_other_key is None:
+            break
+        prev_other_key = contiguous_other_key
+        block_lines.append(cur_line)
+        block_keys.append(cur_key)
+        block_idx += 1
+    return (block_keys, block_lines)
+
+
 def process_mapped_block(
     file_path: str,
     hi: int,
@@ -437,24 +477,28 @@ def process_mapped_block(
         block_keys: list[LineLocationKey] = []
         # Group contiguous mapped added or removed lines.
         status_to_check = LineDiffStatus.ADDED if is_added else LineDiffStatus.DELETED
-        block_idx = hunk_line_idx
-        while (
-            block_idx < len(hunk.lines)
-            and hunk.lines[block_idx].status == status_to_check
-            and (file_path, hi, get_line_no(hunk.lines[block_idx])) in markers
-        ):
-            cur_line = hunk.lines[block_idx]
-            cur_key = (file_path, hi, get_line_no(cur_line))
-            cur_other_key = mapping.get(cur_key, [])[0]
-            if len(block_keys) > 0:
-                prev_other_key = mapping.get(block_keys[-1], [])[0]
-                if not is_contiguous_key(prev_other_key, cur_other_key):
-                    # Not contiguous, so output block
-                    print("Not contiguous")
-                    break
-            block_lines.append(cur_line)
-            block_keys.append(cur_key)
-            block_idx += 1
+        cur_other_keys = mapping.get(key, [])
+        blocks = []
+        # check what block is formed from every other key
+        # If the first line has multiple keys (e.g. is combined or split)
+        # Check all blocks
+        # and take the longest one?
+        for other_key in cur_other_keys:
+            block_keys, block_lines = get_contiguous_block(
+                hunk,
+                hunk_line_idx + 1,
+                file_path,
+                hi,
+                other_key,
+                get_line_no,
+                status_to_check,
+                markers,
+                mapping,
+            )
+            blocks.append((block_keys, block_lines))
+        longest_block = max(blocks, key=lambda x: len(x[1]))
+        block_keys = [key, *longest_block[0]]
+        block_lines = [line, *longest_block[1]]
         if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
             # Output with block header/footer
             marker = markers[block_keys[0]]
@@ -502,7 +546,6 @@ def process_mapped_block(
                     f"{prefix}{color}{markers[k].value}{bline.content[1:]}{RESET}"
                 )
                 hunk_line_idx += 1
-                # only output one line
                 break
     else:
         letter = "C" if is_added else "F"
