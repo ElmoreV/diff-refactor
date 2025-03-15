@@ -494,7 +494,7 @@ def process_mapped_block(
                 markers,
                 mapping,
             )
-            blocks.append((block_keys, block_lines))
+            blocks.append((block_keys, block_lines, other_key))
         longest_block = max(blocks, key=lambda x: len(x[1]))
         block_keys = [key, *longest_block[0]]
         block_lines = [line, *longest_block[1]]
@@ -503,10 +503,10 @@ def process_mapped_block(
             marker = markers[block_keys[0]]
             desc = block_marker_description(marker)
             # Get info of the other side from the mapping if available:
-            other_first_block_line_keys = mapping.get(block_keys[0], [])
+            other_first_block_line_keys = longest_block[2]
             if other_first_block_line_keys:
                 other_file, other_hunk_idx, other_absolute_line_no = (
-                    other_first_block_line_keys[0]
+                    other_first_block_line_keys
                 )
                 other_lines = file_dict[other_file].hunks[other_hunk_idx].lines
                 other_line_no = [
