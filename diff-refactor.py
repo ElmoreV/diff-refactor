@@ -7,7 +7,6 @@ from enum import Enum
 import argparse
 # --- Configuration ---
 
-# TODO: DR3. See: test-swap-complex.diff, it does care about the order of lines in a block!
 # TODO: DR4. There are double blocks: sometimes we have some lines that are SPLIT inside of a MOVED block
 # TODO: DR4. ctd: what should we do with these?
 # TODO: DR5. Remove the autojunk from the diff. (like )} or newlines).
