@@ -11,7 +11,7 @@ When you need to diff a large refactor based on moving, merging, splitting or ab
 
 Run a git diff and save it into a file, e.g.
 
-`git diff > changes.diff`
+`git diff main "src/*" > changes.diff`
 
 Then call the python code with the file by
 
