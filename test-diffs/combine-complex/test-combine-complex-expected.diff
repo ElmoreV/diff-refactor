@@ -1,0 +1,24 @@
+diff --git a/a.txt b/b.txt
+index 13576d5..ad47cbe 100644
+--- a/a.txt
++++ b/b.txt
+@@ -1,11 +1,11 @@
+M-line 1
+ neutral line 2
+---- from 3 to 6 SPLIT block ----
+S-line 3
+S-line 4
+M-lind 5
+M-line 6
+---- end SPLIT block ----
+ line 7
+---- from 3 to 6 SPLIT block ----
+S+line 3
+S+line 4
+M+lind 5
+M+line 6
+---- end SPLIT block ----
+M+line 1
+S+line 3
+S+line 4
+\ No newline at end of file
