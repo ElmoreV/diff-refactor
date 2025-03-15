@@ -437,12 +437,13 @@ def process_mapped_block(
         block_keys: list[LineLocationKey] = []
         # Group contiguous mapped added or removed lines.
         status_to_check = LineDiffStatus.ADDED if is_added else LineDiffStatus.DELETED
+        block_idx = hunk_line_idx
         while (
-            hunk_line_idx < len(hunk.lines)
-            and hunk.lines[hunk_line_idx].status == status_to_check
-            and (file_path, hi, get_line_no(hunk.lines[hunk_line_idx])) in markers
+            block_idx < len(hunk.lines)
+            and hunk.lines[block_idx].status == status_to_check
+            and (file_path, hi, get_line_no(hunk.lines[block_idx])) in markers
         ):
-            cur_line = hunk.lines[hunk_line_idx]
+            cur_line = hunk.lines[block_idx]
             cur_key = (file_path, hi, get_line_no(cur_line))
             cur_other_key = mapping.get(cur_key, [])[0]
             if len(block_keys) > 0:
@@ -453,7 +454,7 @@ def process_mapped_block(
                     break
             block_lines.append(cur_line)
             block_keys.append(cur_key)
-            hunk_line_idx += 1
+            block_idx += 1
         if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
             # Output with block header/footer
             marker = markers[block_keys[0]]
@@ -489,6 +490,7 @@ def process_mapped_block(
                 out_lines.append(
                     f"{prefix}{color}{markers[k].value}{bline.content[1:]}{RESET}"
                 )
+                hunk_line_idx += 1
             out_lines.append(footer_blk)
         else:
             # Output wihtout block header/footer
@@ -499,6 +501,9 @@ def process_mapped_block(
                 out_lines.append(
                     f"{prefix}{color}{markers[k].value}{bline.content[1:]}{RESET}"
                 )
+                hunk_line_idx += 1
+                # only output one line
+                break
     else:
         letter = "C" if is_added else "F"
         prefix = f"{letter}{get_line_no(line)}:" if VERBOSE else ""
