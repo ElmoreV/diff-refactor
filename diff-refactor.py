@@ -405,6 +405,14 @@ def print_hunk_header(hunk: ParsedHunkDiffHeader) -> str:
     )
 
 
+def is_contiguous_key(prev_key: LineLocationKey, cur_key: LineLocationKey) -> bool:
+    return (
+        prev_key[0] == cur_key[0]
+        and prev_key[1] == cur_key[1]
+        and prev_key[2] + 1 == cur_key[2]
+    )
+
+
 def process_mapped_block(
     file_path: str,
     hi: int,
@@ -416,10 +424,10 @@ def process_mapped_block(
     file_dict: dict[str, ParsedFileDiff],
     is_added: bool,
 ) -> tuple[list[str], int]:  # out_lines, hunk_line_idx
-    def get_line_no(line):
+    def get_line_no(line: ParsedHunkDiffLine) -> int:
         return line.absolute_new_line_no if is_added else line.absolute_old_line_no
 
-    def get_other_line_no(line):
+    def get_other_line_no(line: ParsedHunkDiffLine) -> int:
         return line.absolute_old_line_no if is_added else line.absolute_new_line_no
 
     out_lines = []
@@ -434,14 +442,17 @@ def process_mapped_block(
             and hunk.lines[hunk_line_idx].status == status_to_check
             and (file_path, hi, get_line_no(hunk.lines[hunk_line_idx])) in markers
         ):
-            block_lines.append(hunk.lines[hunk_line_idx])
-            block_keys.append(
-                (
-                    file_path,
-                    hi,
-                    get_line_no(hunk.lines[hunk_line_idx]),
-                )
-            )
+            cur_line = hunk.lines[hunk_line_idx]
+            cur_key = (file_path, hi, get_line_no(cur_line))
+            cur_other_key = mapping.get(cur_key, [])[0]
+            if len(block_keys) > 0:
+                prev_other_key = mapping.get(block_keys[-1], [])[0]
+                if not is_contiguous_key(prev_other_key, cur_other_key):
+                    # Not contiguous, so output block
+                    print("Not contiguous")
+                    break
+            block_lines.append(cur_line)
+            block_keys.append(cur_key)
             hunk_line_idx += 1
         if len(block_lines) >= BLOCK_HEADER_THRESHOLD:
             # Output with block header/footer
