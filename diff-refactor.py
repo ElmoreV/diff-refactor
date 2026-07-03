@@ -86,7 +86,7 @@ def parse_hunk_header(
 
 
 def norm_line(line):
-    return line[1:].lstrip() if line and line[0] in "+- " else line.lstrip()
+    return line[1:].strip() if line and line[0] in "+- " else line.strip()
 
 
 def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
