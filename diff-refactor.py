@@ -140,6 +140,9 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
                 lines=[],
             )
             cur_old_count = cur_new_count = 0
+        elif line.startswith("\ No newline at end of file"):
+            # ignore this line
+            continue
         else:
             if current_hunk is not None:
                 idx = len(current_hunk.lines)
