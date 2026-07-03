@@ -64,7 +64,8 @@ class ParsedHunkDiff:
 @dataclass
 class ParsedFileDiff:
     header: list[str]
-    file_path: str
+    old_file_path: str
+    new_file_path: str
     status: FileDiffStatus
     hunks: list[ParsedHunkDiff]
 
@@ -91,7 +92,8 @@ def norm_line(line):
 
 def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
     files: list[ParsedFileDiff] = []
-    current_file: str | None = None
+    current_file_old: str | None = None
+    current_file_new: str | None = None
     current_header: list[str] = []
     current_hunks: list[ParsedHunkDiff] = []
     current_hunk: ParsedHunkDiff | None = None
@@ -101,20 +103,22 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
     for line in diff_text.splitlines():
         if line.startswith("diff --git"):
             # diff --git a/src/App.js b/src/App.js
-            if current_file is not None:
+            if current_file_old is not None and current_file_new is not None:
                 if current_hunk is not None:
                     current_hunks.append(current_hunk)
                 files.append(
                     ParsedFileDiff(
                         header=current_header,
-                        file_path=current_file,
+                        old_file_path=current_file_old,
+                        new_file_path=current_file_new,
                         status=status,
                         hunks=current_hunks,
                     )
                 )
             current_header = [line]
             parts = line.split()
-            current_file = parts[3][2:] if len(parts) >= 4 else "unknown"
+            current_file_old = parts[2][2:] if len(parts) >= 4 else "unknown"
+            current_file_new = parts[3][2:] if len(parts) >= 4 else "unknown"
             current_hunks = []
             current_hunk = None
             cur_old_count = cur_new_count = 0
@@ -164,13 +168,14 @@ def parse_diff(diff_text: str) -> list[ParsedFileDiff]:
                 current_hunk.lines.append(new_line)
             else:
                 current_header.append(line)
-    if current_file is not None:
+    if current_file_old is not None and current_file_new is not None:
         if current_hunk is not None:
             current_hunks.append(current_hunk)
         files.append(
             ParsedFileDiff(
                 header=current_header,
-                file_path=current_file,
+                old_file_path=current_file_old,
+                new_file_path=current_file_new,
                 status=status,
                 hunks=current_hunks,
             )
@@ -306,8 +311,8 @@ def build_match_mappings(
                                 # src/dst_line_pos = the aboslute position of the line
                                 src_line_pos = src_abs_line_pos[block.a + k]
                                 dst_line_pos = dst_abs_line_pos[block.b + k]
-                                src_key = (src.file_path, srch_ii, src_line_pos)
-                                dst_key = (dst.file_path, dsth_jj, dst_line_pos)
+                                src_key = (src.new_file_path, srch_ii, src_line_pos)
+                                dst_key = (dst.new_file_path, dsth_jj, dst_line_pos)
                                 added_mapping.setdefault(dst_key, []).append(src_key)
                                 removed_mapping.setdefault(src_key, []).append(dst_key)
     return added_mapping, removed_mapping
@@ -453,7 +458,7 @@ def get_contiguous_block(
 
 
 def process_mapped_block(
-    file_path: str,
+    file_key: str,
     hi: int,
     line: ParsedHunkDiffLine,
     markers: dict[LineLocationKey, LineMarker],
@@ -470,7 +475,7 @@ def process_mapped_block(
         return line.absolute_old_line_no if is_added else line.absolute_new_line_no
 
     out_lines = []
-    key = (file_path, hi, get_line_no(line))
+    key = (file_key, hi, get_line_no(line))
     if key in markers:
         block_lines: list[ParsedHunkDiffLine] = []
         block_keys: list[LineLocationKey] = []
@@ -486,7 +491,7 @@ def process_mapped_block(
             block_keys, block_lines = get_contiguous_block(
                 hunk,
                 hunk_line_idx + 1,
-                file_path,
+                file_key,
                 hi,
                 other_key,
                 get_line_no,
@@ -505,22 +510,23 @@ def process_mapped_block(
             # Get info of the other side from the mapping if available:
             other_first_block_line_keys = longest_block[2]
             if other_first_block_line_keys:
-                other_file, other_hunk_idx, other_absolute_line_no = (
+                other_file_key, other_hunk_idx, other_absolute_line_no = (
                     other_first_block_line_keys
                 )
-                other_lines = file_dict[other_file].hunks[other_hunk_idx].lines
+                other_file = file_dict[other_file_key]
+                other_lines = other_file.hunks[other_hunk_idx].lines
                 other_line_no = [
                     get_other_line_no(other_line)
                     for other_line in other_lines
                     if get_other_line_no(other_line) == other_absolute_line_no
                 ][0]
             else:
-                other_file, other_line_no = "unknown", "?"
-
+                other_file_key, other_line_no = "unknown", "?"
+            this_file = file_dict[file_key]
             this_line_no = get_line_no(block_lines[0])
-            dst_file = file_path if is_added else other_file
+            dst_file = this_file.new_file_path if is_added else other_file.new_file_path
             dst_line = this_line_no if is_added else other_line_no
-            src_file = other_file if is_added else file_path
+            src_file = other_file.old_file_path if is_added else this_file.old_file_path
             src_line = other_line_no if is_added else this_line_no
 
             header_blk = f"----- {desc} block from {src_file}:{src_line} to {dst_file}:{dst_line} -----"
@@ -578,7 +584,7 @@ def output_annotated_diff(
                 # Process added lines
                 if line.status == LineDiffStatus.ADDED:
                     more_out_lines, hunk_line_idx = process_mapped_block(
-                        f.file_path,
+                        f.new_file_path,
                         hi,
                         line,
                         added_markers,
@@ -592,7 +598,7 @@ def output_annotated_diff(
                 # Process removed lines
                 elif line.status == LineDiffStatus.DELETED:
                     more_out_lines, hunk_line_idx = process_mapped_block(
-                        f.file_path,
+                        f.new_file_path,
                         hi,
                         line,
                         removed_markers,
@@ -623,7 +629,7 @@ def output_annotated_diff(
 def main():
     diff_text = sys.stdin.read()
     files = parse_diff(diff_text)
-    file_dict = {f.file_path: f for f in files}
+    file_dict = {f.new_file_path: f for f in files}
     if VERBOSE:
         from pprint import pprint
 
