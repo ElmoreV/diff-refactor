@@ -656,7 +656,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose output"
     )
+    parser.add_argument(
+        "-nc", "--no-color", action="store_true", help="Disable color output"
+    )
     args = parser.parse_args()
     if args.verbose:
         VERBOSE = True
+    if args.no_color:
+        MARKER_COLORS = {marker: "" for marker in MARKER_COLORS}
+        HEADER_HUNK_COLOR = ""
+        DEFAULT_ADDED_COLOR = ""
+        DEFAULT_REMOVED_COLOR = ""
+        RESET = ""
     main()
