@@ -376,7 +376,7 @@ def compute_markers_individual(
 # Colors for markers (dull for moved, bright for unmapped).
 MARKER_COLORS = {
     LineMarker.MOVED_ADDED: "\033[2;32m",  # dim green
-    LineMarker.MOVED_REMOVED: "\033[2;31m",  # dim red
+    LineMarker.MOVED_REMOVED: "\033[1;91m",  # dim red
     LineMarker.COMBINED_ADDED: "\033[94m",  # bright blue
     LineMarker.COMBINED_REMOVED: "\033[93m",  # bright magenta
     LineMarker.SPLIT_ADDED: "\033[95m",  # bright cyan
